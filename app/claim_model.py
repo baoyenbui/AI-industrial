@@ -8,14 +8,23 @@ from groq import Groq
 from sentence_transformers import SentenceTransformer
 from PIL import Image
 import pytesseract
-from app.config import GROQ_API_KEY
+import os
+from dotenv import load_dotenv
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import JSONResponse
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+load_dotenv()
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    raise ValueError("Missing GROQ_API_KEY")
 
 client = Groq(api_key=GROQ_API_KEY)
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-df = pd.read_csv(r"C:\Users\admin\Downloads\ai-claim-approval\health_insurance_claims.csv")
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+df = pd.read_csv("health_insurance_claims.csv")
 
 cols = [
     "PatientAge","PatientGender","PatientIncome","PatientMaritalStatus",
@@ -40,76 +49,89 @@ emb = np.array(emb, dtype="float32")
 index = faiss.IndexFlatL2(emb.shape[1])
 index.add(emb)
 
+app = FastAPI()
 
-def ocr_image(file):
-    raw = file.file.read()
-    if not raw:
-        return ""
-
+def safe_float(x):
     try:
-        img = Image.open(io.BytesIO(raw))
-        img = img.convert("RGB")
-        return pytesseract.image_to_string(img)
-    except Exception:
-        return ""
+        if x is None:
+            return None
+        x = str(x).replace(",", ".")
+        m = re.search(r"\d+(\.\d+)?", x)
+        return float(m.group()) if m else None
+    except:
+        return None
 
+def safe_int(x):
+    try:
+        if x is None:
+            return None
+        m = re.search(r"\d+", str(x))
+        return int(m.group()) if m else None
+    except:
+        return None
+
+def ocr_image(file_bytes):
+    try:
+        if not file_bytes:
+            return ""
+        img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+        text = pytesseract.image_to_string(img)
+        return text.strip()
+    except:
+        return ""
 
 def clean_ocr(text):
-    return " ".join(text.split()).replace("|", " ").strip()
-
+    return " ".join(text.split()) if text else ""
 
 def rule_extract(text):
     data = {
-        "PatientName": None,
+        "PatientName": "",
         "PatientAge": None,
-        "PatientGender": None,
-        "PatientEmploymentStatus": None,
+        "PatientGender": "",
+        "PatientEmploymentStatus": "",
+        "PatientMaritalStatus": "",
+        "DiagnosisCode": "",
+        "ProcedureCode": "",
         "ClaimAmount": None
     }
 
-    name = re.search(r"\[NAME\](.*?)\[/NAME\]", text, re.I)
+    if not text:
+        return data, 0
+
+    name = re.search(r"([A-Z][a-z]+ [A-Z][a-z]+)\s*\|\s*(male|female)", text, re.I)
     if name:
-        data["PatientName"] = name.group(1).strip()
+        data["PatientName"] = name.group(1)
 
-    gender = re.search(r"\[GENDER\](.*?)\[/GENDER\]", text, re.I)
-    if gender:
-        g = gender.group(1).lower()
-        if "male" in g:
-            data["PatientGender"] = "M"
-        elif "female" in g:
-            data["PatientGender"] = "F"
+    if re.search(r"\bmale\b", text.lower()) and "female" not in text.lower():
+        data["PatientGender"] = "Male"
+    elif re.search(r"\bfemale\b", text.lower()):
+        data["PatientGender"] = "Female"
 
-    age = re.search(r"\[AGE\](.*?)\[/AGE\]", text, re.I)
+    age = re.search(r"(\d{1,3})\s*(?:years?\s*old|yo|age)", text.lower())
     if age:
-        num = re.search(r"\d+", age.group(1))
-        if num:
-            data["PatientAge"] = int(num.group())
+        data["PatientAge"] = safe_int(age.group(1))
 
-    emp = re.search(r"\[EMPLOYMENT\](.*?)\[/EMPLOYMENT\]", text, re.I)
+    emp = re.search(r"(employed|unemployed|self[- ]employed)", text.lower())
     if emp:
-        data["PatientEmploymentStatus"] = emp.group(1).strip()
+        data["PatientEmploymentStatus"] = emp.group(1)
 
-    total = re.findall(r"\[TOTAL\](.*?)\[/TOTAL\]", text, re.I)
-    if total:
-        last = total[-1]
-        num = re.search(r"[\d]+[.,]?\d*", last.replace(",", "."))
-        if num:
-            try:
-                data["ClaimAmount"] = float(num.group())
-            except:
-                pass
+    marital = re.search(r"(single|married|divorced|widowed)", text.lower())
+    if marital:
+        data["PatientMaritalStatus"] = marital.group(1)
 
-    score = sum(v is not None for v in data.values())
+    total_matches = re.findall(r"\btotal\b\s*[:$]?\s*\$?\s*([\d.,]+)", text.lower())
+    if total_matches:
+        value = total_matches[-1].replace(",", ".")
+        data["ClaimAmount"] = safe_float(value)
+
+    score = sum(v is not None and str(v).strip() != "" for v in data.values())
     return data, score
-
 
 def llm_fix(text, partial):
     prompt = f"""
-You are a strict extraction system.
+Extract structured data.
 
-Only correct missing fields using OCR text.
-
-OCR TEXT:
+TEXT:
 {text}
 
 PARTIAL:
@@ -117,43 +139,67 @@ PARTIAL:
 
 Return ONLY JSON:
 {{
-  "PatientName": null,
+  "PatientName": "",
   "PatientAge": null,
-  "PatientGender": "M|F|null",
-  "PatientEmploymentStatus": null,
+  "PatientGender": "Male|Female|None",
+  "PatientEmploymentStatus": "",
+  "PatientMaritalStatus": "",
+  "DiagnosisCode": "",
+  "ProcedureCode": "",
   "ClaimAmount": null
 }}
 """
-
     try:
         res = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             temperature=0,
             messages=[{"role": "user", "content": prompt}]
         )
-
         return json.loads(res.choices[0].message.content)
     except:
         return partial
 
+def ocr_pipeline(file: UploadFile):
+    try:
+        file_bytes = file.file.read()
 
-def search_similar(query, k=3):
-    q = model.encode([query]).astype("float32")
-    _, idx = index.search(q, k)
-    return "\n\n".join(df.iloc[i]["text"] for i in idx[0])
+        if not file_bytes:
+            return {"status": "failed", "raw_text": "", "extracted_data": {}}
 
+        text = clean_ocr(ocr_image(file_bytes))
+
+        if not text:
+            return {"status": "failed", "raw_text": "", "extracted_data": {}}
+
+        rule_data, score = rule_extract(text)
+
+        if score < 2:
+            rule_data = llm_fix(text, rule_data)
+
+        return {
+            "status": "ok",
+            "raw_text": text,
+            "extracted_data": rule_data
+        }
+
+    except Exception as e:
+        return {
+            "status": "failed",
+            "raw_text": str(e),
+            "extracted_data": {}
+        }
 
 def get_claim_approval(query):
-    sim = search_similar(query)
+    sim = "\n".join(df.iloc[i]["text"] for i in [0, 1, 2])
 
     prompt = f"""
 NEW CLAIM:
 {query}
 
-SIMILAR CASES:
+SIMILAR:
 {sim}
 
-Return JSON ONLY:
+Return ONLY JSON:
 {{
   "decision": "Approved|Denied|Pending",
   "reason": "short",
@@ -165,35 +211,8 @@ Return JSON ONLY:
         res = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             temperature=0,
-            messages=[
-                {"role": "system", "content": "strict insurance engine"},
-                {"role": "user", "content": prompt}
-            ]
+            messages=[{"role": "user", "content": prompt}]
         )
         return json.loads(res.choices[0].message.content)
     except:
-        return {"error": "invalid_response"}
-
-
-def process_claim(data):
-    return get_claim_approval(str(data))
-
-
-def ocr_pipeline(file):
-    text = ocr_image(file)
-
-    if not text:
-        return {"status": "failed", "reason": "no_ocr"}
-
-    text = clean_ocr(text)
-
-    rule_data, score = rule_extract(text)
-
-    if score < 3:
-        rule_data = llm_fix(text, rule_data)
-
-    return {
-        "raw_text": text,
-        "extracted_data": rule_data,
-        "status": "ok"
-    }
+        return {"decision": "Pending", "reason": "parse_error", "confidence": 0.0}
