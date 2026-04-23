@@ -21,8 +21,13 @@ st.markdown("""
     box-shadow: none !important;
 }
 
-.block-container {
+div.block-container {
     background-color: white !important;
+    padding-top: 2rem !important;
+    padding-bottom: 2rem !important;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
+    max-width: 1200px;
 }
 
 section {
@@ -37,11 +42,11 @@ div[data-testid="stExpander"] {
     padding: 12px;
 }
 
-input, textarea {
+input:not([type="hidden"]), textarea {
     background-color: white !important;
     color: black !important;
     border: 1px solid #B0B0B0 !important;
-    border-radius: 8px;
+    border-radius: 8px !important;
 }
 
 h1, h2, h3, h4, h5, h6, p, span, label {
@@ -65,6 +70,14 @@ div[data-baseweb="select"] > div {
 
 div[data-baseweb="select"] svg {
     fill: #666 !important;
+}
+
+div[data-baseweb="select"] input {
+    opacity: 0 !important;
+    position: absolute !important;
+    pointer-events: none !important;
+    height: 0 !important;
+    width: 0 !important;
 }
 
 ul[role="listbox"] {
@@ -160,31 +173,26 @@ div[data-testid="stNumberInput"] button {
     background: white !important;
     border-left: 1px solid #B0B0B0 !important;
 }
-
 input::placeholder {
-    color: black !important;
-    opacity: 1 !important;
+    color: rgba(0, 0, 0, 0.4) !important;
 }
 
 textarea::placeholder {
-    color: black !important;
-    opacity: 1 !important;
+    color: rgba(0, 0, 0, 0.4) !important;
 }
-
-
 </style>
 """, unsafe_allow_html=True)
 
+
 def clean_text(x):
     if x is None:
-        return None
+        return ""
     x = str(x)
     x = unicodedata.normalize("NFKC", x)
     x = re.sub(r"[\u200b-\u200f\ufeff\u00a0]", "", x)
     x = re.sub(r"[\x00-\x1f\x7f]", "", x)
     x = re.sub(r"\s+", " ", x).strip()
-    return x if x else None
-
+    return x
 
 def safe_int(x):
     try:
@@ -216,73 +224,72 @@ def normalize_gender(x):
 
 init_state = {
     "patient_age": 0,
-    "patient_gender": "Choose gender",
+    "patient_gender": None,
     "patient_income": 0.0,
-    "patient_employment": "",
-    "patient_marital": "",
-    "provider_specialty": "",
-    "claim_type": "",
-    "claim_submission_method": "",
-    "diagnosis": "",
-    "procedure": "",
-    "claim_status": "",
+    "patient_employment": None,
+    "patient_marital": None,
+    "provider_specialty": None,
+    "claim_type": None,
+    "claim_submission_method": None,
+    "diagnosis": None,
+    "procedure": None,
+    "claim_status": None,
     "claim_amount": 0.0,
     "raw_text": ""
 }
 
 for k, v in init_state.items():
-    if k not in st.session_state:
-        st.session_state[k] = v
-
+    st.session_state.setdefault(k, v)
 
 st.title("Health Insurance Claim Approval System")
 
 left, right = st.columns([1, 1.2])
 
 with left:
-    st.subheader("Upload Document")
+    st.markdown("<h3 style='margin-bottom:10px;'>Upload Document</h3>", unsafe_allow_html=True)
 
     uploaded_file = st.file_uploader("Select Image", type=["png", "jpg", "jpeg"])
 
     if uploaded_file:
-        file_bytes = uploaded_file.getvalue()
-        image = Image.open(io.BytesIO(file_bytes))
+        image = Image.open(io.BytesIO(uploaded_file.getvalue()))
 
-        c_img = st.columns([1, 3, 1])
-        with c_img[1]:
-            st.image(image, use_container_width=True)
+        w = 285
+        h = int(w * image.height / image.width)
+        image = image.resize((w, h), Image.LANCZOS)
 
-        c_btn = st.columns([1, 2, 1])
-        with c_btn[1]:
-            run_ocr = st.button("Run OCR", key="run_ocr_btn")
+        col_img = st.columns([1, 3, 1])
+
+        with col_img[1]:
+            st.image(image, width=w, caption="Uploaded Document")
+            
+        col_btn = st.columns([1, 1, 1])
+        with col_btn[1]:
+            run_ocr = st.button("Run OCR", use_container_width=True)
 
         if run_ocr:
-            mime_type = mimetypes.guess_type(uploaded_file.name)[0] or "image/jpeg"
-            files = {"file": (uploaded_file.name, file_bytes, mime_type)}
-            response = requests.post(OCR_API_URL, files=files, timeout=60)
+            res = requests.post(
+                OCR_API_URL,
+                files={"file": uploaded_file}
+            )
 
-            if response.status_code != 200:
-                st.error(response.text)
-                st.stop()
+            if res.status_code == 200:
+                data = res.json().get("extracted_data", {})
 
-            data = response.json()
-            extracted = data.get("extracted_data", {})
-
-            st.session_state["patient_age"] = safe_int(extracted.get("PatientAge"))
-            st.session_state["patient_gender"] = normalize_gender(extracted.get("PatientGender"))
-            st.session_state["patient_income"] = safe_float(extracted.get("PatientIncome"))
-            st.session_state["patient_employment"] = clean_text(extracted.get("PatientEmploymentStatus")) or ""
-            st.session_state["patient_marital"] = clean_text(extracted.get("PatientMaritalStatus")) or ""
-            st.session_state["provider_specialty"] = clean_text(extracted.get("ProviderSpecialty")) or ""
-            st.session_state["claim_type"] = clean_text(extracted.get("ClaimType")) or ""
-            st.session_state["claim_submission_method"] = clean_text(extracted.get("ClaimSubmissionMethod")) or ""
-            st.session_state["diagnosis"] = clean_text(extracted.get("DiagnosisCode")) or ""
-            st.session_state["procedure"] = clean_text(extracted.get("ProcedureCode")) or ""
-            st.session_state["claim_status"] = clean_text(extracted.get("ClaimStatus")) or ""
-            st.session_state["claim_amount"] = safe_float(extracted.get("ClaimAmount"))
+                st.session_state["patient_age"] = safe_int(data.get("PatientAge"))
+                st.session_state["patient_gender"] = normalize_gender(data.get("PatientGender"))
+                st.session_state["patient_income"] = safe_float(data.get("PatientIncome"))
+                st.session_state["patient_employment"] = clean_text(data.get("PatientEmploymentStatus"))
+                st.session_state["patient_marital"] = clean_text(data.get("PatientMaritalStatus"))
+                st.session_state["provider_specialty"] = clean_text(data.get("ProviderSpecialty"))
+                st.session_state["claim_type"] = clean_text(data.get("ClaimType"))
+                st.session_state["claim_submission_method"] = clean_text(data.get("ClaimSubmissionMethod"))
+                st.session_state["diagnosis"] = clean_text(data.get("DiagnosisCode"))
+                st.session_state["procedure"] = clean_text(data.get("ProcedureCode"))
+                st.session_state["claim_status"] = clean_text(data.get("ClaimStatus"))
+                st.session_state["claim_amount"] = safe_float(data.get("ClaimAmount"))
 
 with right:
-    st.subheader("Claim Information")
+    st.markdown("<h3 style='margin-bottom:10px;'>Claim Information</h3>", unsafe_allow_html=True)
 
     with st.form("claim_form"):
         c1, c2 = st.columns(2)
@@ -290,13 +297,18 @@ with right:
         with c1:
             st.number_input("Age", 0, 120, key="patient_age")
 
+            gender_options = ["Male", "Female", "Other"]
+
             st.selectbox(
                 "Gender",
-                ["Choose gender", "Male", "Female", "Other"],
+                options=gender_options,
+                index=None,
+                placeholder="Choose gender",
                 key="patient_gender"
             )
 
             st.number_input("Income", key="patient_income")
+
             st.text_input("Employment", key="patient_employment", placeholder="None")
             st.text_input("Provider Specialty", key="provider_specialty", placeholder="None")
             st.text_input("Claim Type", key="claim_type", placeholder="None")
@@ -307,19 +319,21 @@ with right:
             st.text_input("Procedure Code", key="procedure", placeholder="None")
             st.text_input("Submission Method", key="claim_submission_method", placeholder="None")
             st.text_input("Claim Status", key="claim_status", placeholder="None")
-            st.number_input("Amount", key="claim_amount")
 
-        c_btn2 = st.columns([1, 1, 1])
+            st.number_input("Amount", key="claim_amount")
+        
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+        c_btn2 = st.columns([1, 2, 1])
+
         with c_btn2[1]:
-            submitted = st.form_submit_button("Submit Claim")
+            submitted = st.form_submit_button("Submit Claim", use_container_width=True)
 
 if submitted:
     gender = st.session_state["patient_gender"]
-    if gender == "Choose gender":
-        gender = "None"
+    gender = gender if gender in ["Male", "Female", "Other"] else "None"
 
     query = f"""
-RAW:{st.session_state["raw_text"]}
+
 Age:{st.session_state["patient_age"]}
 Gender:{gender}
 Income:{st.session_state["patient_income"]}
@@ -333,7 +347,6 @@ Procedure:{st.session_state["procedure"] or "None"}
 Status:{st.session_state["claim_status"] or "None"}
 Amount:{st.session_state["claim_amount"]}
 """
-
     res = requests.get(API_URL, params={"query": query})
 
     if res.status_code == 200:
@@ -348,14 +361,14 @@ Amount:{st.session_state["claim_amount"]}
 
         st.markdown(f"""
         <div style="
-            background:white;
-            border:2px solid black;
-            border-radius:12px;
-            padding:16px;
-            color:black;
-            margin-top:12px;
+            background: #ffffff;
+            border: 1px solid rgba(0,0,0,0.08);
+            border-radius: 16px;
+            padding: 20px;
+            margin-top: 18px;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.06);
         ">
-            <h3>Decision Result</h3>
+            <h3 style="margin-bottom: 10px;">Decision Result</h3>
             <p><b>Status:</b> {decision}</p>
             <p><b>Confidence:</b> {confidence}</p>
             <p><b>Explanation:</b> {reason}</p>
