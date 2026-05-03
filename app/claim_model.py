@@ -10,16 +10,10 @@ from PIL import Image
 import pytesseract
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import JSONResponse
 
 load_dotenv()
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-if not GROQ_API_KEY:
-    raise ValueError("Missing GROQ_API_KEY")
-
-client = Groq(api_key=GROQ_API_KEY)
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -27,29 +21,57 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 df = pd.read_csv("health_insurance_claims.csv")
 
 cols = [
-    "PatientAge","PatientGender","PatientIncome","PatientMaritalStatus",
-    "PatientEmploymentStatus","ProviderSpecialty","ClaimAmount",
-    "ClaimType","ClaimSubmissionMethod","DiagnosisCode","ProcedureCode","ClaimStatus"
+    "PatientAge", "PatientGender", "PatientIncome", "PatientMaritalStatus",
+    "PatientEmploymentStatus", "ProviderSpecialty", "ClaimAmount",
+    "ClaimType", "ClaimSubmissionMethod", "DiagnosisCode", "ProcedureCode", "ClaimStatus"
 ]
 
-df = df[cols].dropna()
+df = df[cols].fillna("None")
 
-df["text"] = df.apply(
-    lambda r: f"Age:{r['PatientAge']} Gender:{r['PatientGender']} Income:{r['PatientIncome']} "
-              f"Marital:{r['PatientMaritalStatus']} Employment:{r['PatientEmploymentStatus']} "
-              f"Specialty:{r['ProviderSpecialty']} Type:{r['ClaimType']} "
-              f"Submit:{r['ClaimSubmissionMethod']} Diagnosis:{r['DiagnosisCode']} "
-              f"Procedure:{r['ProcedureCode']} Amount:{r['ClaimAmount']}",
+
+def clean_str(x):
+    if x is None:
+        return "None"
+    x = str(x).strip()
+    return x if x else "None"
+
+
+df["text"] = df.apply(lambda r:
+    f"Age:{clean_str(r['PatientAge'])} Gender:{clean_str(r['PatientGender'])} Income:{clean_str(r['PatientIncome'])} "
+    f"Marital:{clean_str(r['PatientMaritalStatus'])} Employment:{clean_str(r['PatientEmploymentStatus'])} "
+    f"Specialty:{clean_str(r['ProviderSpecialty'])} Type:{clean_str(r['ClaimType'])} "
+    f"Submit:{clean_str(r['ClaimSubmissionMethod'])} Diagnosis:{clean_str(r['DiagnosisCode'])} "
+    f"Procedure:{clean_str(r['ProcedureCode'])} Amount:{clean_str(r['ClaimAmount'])}",
     axis=1
 )
 
-emb = model.encode(df["text"].tolist())
+emb = model.encode(df["text"].tolist(), normalize_embeddings=True)
 emb = np.array(emb, dtype="float32")
 
-index = faiss.IndexFlatL2(emb.shape[1])
+index = faiss.IndexFlatIP(emb.shape[1])
 index.add(emb)
 
-app = FastAPI()
+
+def clean_query(q):
+    if not q:
+        return ""
+    q = str(q).replace("%3A", ":").replace("%0A", " ")
+    return re.sub(r"\s+", " ", q).strip()
+
+
+def ocr_image(file_bytes):
+    try:
+        img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+        return pytesseract.image_to_string(img)
+    except:
+        return ""
+
+
+def clean_text(t):
+    if not t:
+        return ""
+    return re.sub(r"[^\w\s\.\:\-\$]", " ", t).strip()
+
 
 def safe_float(x):
     try:
@@ -61,75 +83,75 @@ def safe_float(x):
     except:
         return None
 
+
 def safe_int(x):
     try:
         if x is None:
             return None
-        m = re.search(r"\d+", str(x))
-        return int(m.group()) if m else None
+        return int(re.search(r"\d+", str(x)).group())
     except:
         return None
 
-def ocr_image(file_bytes):
-    try:
-        if not file_bytes:
-            return ""
-        img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-        text = pytesseract.image_to_string(img)
-        return text.strip()
-    except:
-        return ""
 
-def clean_ocr(text):
-    return " ".join(text.split()) if text else ""
+def safe_json(text):
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except:
+        try:
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            return json.loads(text[start:end])
+        except:
+            return None
+
 
 def rule_extract(text):
+    t = text.lower()
+
     data = {
-        "PatientName": "",
         "PatientAge": None,
-        "PatientGender": "",
-        "PatientEmploymentStatus": "",
-        "PatientMaritalStatus": "",
-        "DiagnosisCode": "",
-        "ProcedureCode": "",
+        "PatientGender": None,
+        "PatientEmploymentStatus": None,
+        "PatientMaritalStatus": None,
+        "DiagnosisCode": None,
+        "ProcedureCode": None,
         "ClaimAmount": None
     }
 
-    if not text:
-        return data, 0
-
-    name = re.search(r"([A-Z][a-z]+ [A-Z][a-z]+)\s*\|\s*(male|female)", text, re.I)
-    if name:
-        data["PatientName"] = name.group(1)
-
-    if re.search(r"\bmale\b", text.lower()) and "female" not in text.lower():
+    if "male" in t and "female" not in t:
         data["PatientGender"] = "Male"
-    elif re.search(r"\bfemale\b", text.lower()):
+    elif "female" in t:
         data["PatientGender"] = "Female"
 
-    age = re.search(r"(\d{1,3})\s*(?:years?\s*old|yo|age)", text.lower())
+    age = re.search(r"(\d{1,3})\s*(years?|age|yo)", t)
     if age:
         data["PatientAge"] = safe_int(age.group(1))
 
-    emp = re.search(r"(employed|unemployed|self[- ]employed)", text.lower())
+    emp = re.search(r"(employed|unemployed|self[- ]employed|freelance|contractor|student|retired)", t)
     if emp:
         data["PatientEmploymentStatus"] = emp.group(1)
 
-    marital = re.search(r"(single|married|divorced|widowed)", text.lower())
+    marital = re.search(r"(single|married|divorced|widowed)", t)
     if marital:
         data["PatientMaritalStatus"] = marital.group(1)
 
-    total_matches = re.findall(r"\btotal\b\s*[:$]?\s*\$?\s*([\d.,]+)", text.lower())
-    if total_matches:
-        value = total_matches[-1].replace(",", ".")
-        data["ClaimAmount"] = safe_float(value)
+    amt = re.findall(r"total\s*[:$]?\s*([\d.,]+)", t)
+    if amt:
+        data["ClaimAmount"] = safe_float(amt[-1])
 
-    score = sum(v is not None and str(v).strip() != "" for v in data.values())
+    def valid(v):
+        return v is not None and str(v).strip().lower() not in ["", "none"]
+
+    score = sum(valid(v) for v in data.values())
+
     return data, score
+
 
 def llm_fix(text, partial):
     prompt = f"""
-Extract structured data.
+Return ONLY valid JSON.
 
 TEXT:
 {text}
@@ -137,43 +159,176 @@ TEXT:
 PARTIAL:
 {json.dumps(partial)}
 
-Return ONLY JSON:
-{{
-  "PatientName": "",
-  "PatientAge": null,
-  "PatientGender": "Male|Female|None",
-  "PatientEmploymentStatus": "",
-  "PatientMaritalStatus": "",
-  "DiagnosisCode": "",
-  "ProcedureCode": "",
-  "ClaimAmount": null
-}}
+FIELDS:
+PatientAge, PatientGender, PatientEmploymentStatus, PatientMaritalStatus, DiagnosisCode, ProcedureCode, ClaimAmount
 """
+
     try:
         res = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             temperature=0,
             messages=[{"role": "user", "content": prompt}]
         )
-        return json.loads(res.choices[0].message.content)
+
+        parsed = safe_json(res.choices[0].message.content)
+
+        if not isinstance(parsed, dict):
+            return partial
+
+        for k in partial:
+            if parsed.get(k) is None:
+                parsed[k] = partial[k]
+
+        return parsed
+
     except:
         return partial
 
-def ocr_pipeline(file: UploadFile):
+
+def retrieve_similar(query):
+    q = clean_query(query)
+    if not q:
+        return ""
+
+    q_emb = model.encode([q], normalize_embeddings=True)
+    q_emb = np.array(q_emb, dtype="float32")
+
+    _, I = index.search(q_emb, k=3)
+
+    return "\n".join(df.iloc[i]["text"] for i in I[0] if i < len(df))
+
+
+def parse_query(query):
+    data = {}
+    for line in query.split("\n"):
+        if ":" in line:
+            k, v = line.split(":", 1)
+            data[k.strip().lower()] = v.strip()
+    return data
+
+
+def detect_missing(data):
+    required = [
+        "age",
+        "gender",
+        "income",
+        "employment",
+        "amount"
+    ]
+
+    missing = []
+
+    for k in required:
+        v = data.get(k)
+
+        if v is None:
+            missing.append(k)
+            continue
+
+        v = str(v).strip().lower()
+
+        if v in ["", "none", "unknown"]:
+            missing.append(k)
+            continue
+
+        if k in ["age", "income", "amount"]:
+            try:
+                if float(v) <= 0:
+                    missing.append(k)
+            except:
+                missing.append(k)
+
+    return missing
+
+
+def get_decision(query, sim):
+
+    parsed = parse_query(query)
+
+    missing = detect_missing(parsed)
+
+    if missing:
+        return {
+            "status": "ok",
+            "decision": "Pending",
+            "reason": "missing_required_fields",
+            "confidence": 0.0
+        }
+
+    income = parsed.get("income")
     try:
-        file_bytes = file.file.read()
+        if income and float(income) <= 0:
+            return {
+                "status": "ok",
+                "decision": "Denied",
+                "reason": "income <= 0",
+                "confidence": 1.0
+            }
+    except:
+        pass
 
-        if not file_bytes:
-            return {"status": "failed", "raw_text": "", "extracted_data": {}}
+    prompt = f"""
+Return ONLY JSON.
 
-        text = clean_ocr(ocr_image(file_bytes))
+RULES:
+- Otherwise Approved
+
+QUERY:
+{query}
+
+SIMILAR:
+{sim}
+"""
+
+    try:
+        res = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            temperature=0,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        parsed = safe_json(res.choices[0].message.content)
+
+        if not parsed:
+            return {
+                "status": "ok",
+                "decision": "Pending",
+                "reason": "invalid_llm_output",
+                "confidence": 0.0
+            }
+
+        parsed["status"] = "ok"
+        return parsed
+
+    except Exception as e:
+        return {
+            "status": "system_error",
+            "decision": "Pending",
+            "reason": str(e),
+            "confidence": 0.0
+        }
+
+
+def get_claim_approval(query):
+    query = clean_query(query)
+    sim = retrieve_similar(query)
+    return get_decision(query, sim)
+
+
+def ocr_pipeline(file):
+    try:
+        content = file.file.read()
+        text = clean_text(ocr_image(content))
 
         if not text:
-            return {"status": "failed", "raw_text": "", "extracted_data": {}}
+            return {
+                "status": "failed",
+                "error": "no_text"
+            }
 
         rule_data, score = rule_extract(text)
 
-        if score < 2:
+        if score < 3:
             rule_data = llm_fix(text, rule_data)
 
         return {
@@ -184,35 +339,6 @@ def ocr_pipeline(file: UploadFile):
 
     except Exception as e:
         return {
-            "status": "failed",
-            "raw_text": str(e),
-            "extracted_data": {}
+            "status": "system_error",
+            "error": str(e)
         }
-
-def get_claim_approval(query):
-    sim = "\n".join(df.iloc[i]["text"] for i in [0, 1, 2])
-
-    prompt = f"""
-NEW CLAIM:
-{query}
-
-SIMILAR:
-{sim}
-
-Return ONLY JSON:
-{{
-  "decision": "Approved|Denied|Pending",
-  "reason": "short",
-  "confidence": 0.0
-}}
-"""
-
-    try:
-        res = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            temperature=0,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return json.loads(res.choices[0].message.content)
-    except:
-        return {"decision": "Pending", "reason": "parse_error", "confidence": 0.0}
