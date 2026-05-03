@@ -13,6 +13,7 @@ st.set_page_config(page_title="Health Claim AI", layout="wide")
 
 DEBUG = st.sidebar.toggle("Debug mode", value=False)
 
+
 st.markdown("""
 <style>
 .stApp {
@@ -116,6 +117,7 @@ pre {
     color: black !important;
 }
 
+/* SUBMIT BUTTON CENTER */
 div[data-testid="stFormSubmitButton"] {
     display: flex !important;
     justify-content: center !important;
@@ -128,7 +130,8 @@ div[data-testid="stFormSubmitButton"] button {
     color: black !important;
     border-radius: 10px !important;
 }
-            
+
+/* BUTTON GLOBAL */
 div[data-testid="stButton"] button {
     width: 180px !important;
     background: white !important;
@@ -137,6 +140,7 @@ div[data-testid="stButton"] button {
     border-radius: 10px !important;
 }
 
+/* FILE UPLOADER BUTTON */
 div[data-testid="stFileUploader"] button {
     background: white !important;
     color: black !important;
@@ -145,6 +149,7 @@ div[data-testid="stFileUploader"] button {
     box-shadow: none !important;
 }
 
+/* NUMBER INPUT FIX */
 div[data-testid="stNumberInput"] {
     border: none !important;
     background: transparent !important;
@@ -173,14 +178,60 @@ div[data-testid="stNumberInput"] button {
     background: white !important;
     border-left: 1px solid #B0B0B0 !important;
 }
-input::placeholder {
-    color: rgba(0, 0, 0, 0.4) !important;
-}
 
+input::placeholder,
 textarea::placeholder {
     color: rgba(0, 0, 0, 0.4) !important;
 }
-</style>
+            
+.info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 16px;
+    height: 16px;
+    margin-left: 6px;
+
+    border-radius: 50%;
+    border: 1px solid black;
+
+    font-size: 11px;
+    font-weight: 600;
+    color: black;
+
+    cursor: help;
+
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+.info-icon:hover,
+.info-icon:focus,
+.info-icon:active {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+div[data-testid="stFormSubmitButton"] {
+    display: flex !important;
+    justify-content: center !important;
+    margin-top: 12px;
+}
+
+div[data-testid="stFormSubmitButton"] button {
+    width: 180px !important;
+    background-color: white !important;
+    color: black !important;
+    border: 1.5px solid black !important;
+    border-radius: 8px !important;
+    font-weight: 600;
+}
+
+div[data-testid="stFormSubmitButton"] button:hover {
+    background-color: #f5f5f5 !important;
+}
+
 """, unsafe_allow_html=True)
 
 
@@ -193,6 +244,7 @@ def clean_text(x):
     x = re.sub(r"[\x00-\x1f\x7f]", "", x)
     x = re.sub(r"\s+", " ", x).strip()
     return x
+
 
 def safe_int(x):
     try:
@@ -207,6 +259,14 @@ def safe_float(x):
     except:
         return 0.0
 
+
+def field(label, help_text, widget):
+    st.markdown(
+        f"<div style='margin-bottom:-8px;font-weight:600'>{label} "
+        f"<span class='info-icon' title='{help_text}'>i</span></div>",
+        unsafe_allow_html=True
+    )
+    return widget(label="", help=None)
 
 def normalize_gender(x):
     x = clean_text(x)
@@ -261,7 +321,7 @@ with left:
 
         with col_img[1]:
             st.image(image, width=w, caption="Uploaded Document")
-            
+
         col_btn = st.columns([1, 1, 1])
         with col_btn[1]:
             run_ocr = st.button("Run OCR", use_container_width=True)
@@ -295,92 +355,192 @@ with right:
         c1, c2 = st.columns(2)
 
         with c1:
-            st.number_input("Age", 0, 120, key="patient_age")
-
-            gender_options = ["Male", "Female", "Other"]
-
-            st.selectbox(
-                "Gender",
-                options=gender_options,
-                index=None,
-                placeholder="Choose gender",
-                key="patient_gender"
+            field(
+                "Age",
+                "Patient age in years (0–120). If unknown, leave default 0.",
+                lambda label, help: st.number_input(label, min_value=0, max_value=120, key="patient_age", help=help)
             )
 
-            st.number_input("Income", key="patient_income")
+            field(
+                "Gender",
+                "Select Male / Female / Other. Required for risk scoring.",
+                lambda label, help: st.selectbox(label, ["Male", "Female", "Other"], key="patient_gender", help=help)
+            )
 
-            st.text_input("Employment", key="patient_employment", placeholder="None")
-            st.text_input("Provider Specialty", key="provider_specialty", placeholder="None")
-            st.text_input("Claim Type", key="claim_type", placeholder="None")
+            field(
+                "Income",
+                "Monthly income in USD. If unknown, keep 0.",
+                lambda label, help: st.number_input(label, min_value=0.0, key="patient_income", help=help)
+            )
+
+            field(
+                "Employment",
+                "Job status like employed, unemployed, student, retired.",
+                lambda label, help: st.text_input(label, key="patient_employment", help=help)
+            )
+
+            field(
+                "Provider Specialty",
+                "Medical department of doctor (e.g. cardiology).",
+                lambda label, help: st.text_input(label, key="provider_specialty", help=help)
+            )
+
+            field(
+                "Claim Type",
+                "Type of insurance claim (medical, dental, etc.).",
+                lambda label, help: st.text_input(label, key="claim_type", help=help)
+            )
 
         with c2:
-            st.text_input("Marital Status", key="patient_marital", placeholder="None")
-            st.text_input("Diagnosis Code", key="diagnosis", placeholder="None")
-            st.text_input("Procedure Code", key="procedure", placeholder="None")
-            st.text_input("Submission Method", key="claim_submission_method", placeholder="None")
-            st.text_input("Claim Status", key="claim_status", placeholder="None")
+            field(
+                "Marital Status",
+                "single / married / divorced / widowed.",
+                lambda label, help: st.text_input(label, key="patient_marital", help=help)
+            )
 
-            st.number_input("Amount", key="claim_amount")
-        
-        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+            field(
+                "Diagnosis Code",
+                "ICD or internal medical diagnosis code.",
+                lambda label, help: st.text_input(label, key="diagnosis", help=help)
+            )
+
+            field(
+                "Procedure Code",
+                "Medical procedure code performed in treatment.",
+                lambda label, help: st.text_input(label, key="procedure", help=help)
+            )
+
+            field(
+                "Submission Method",
+                "How claim was submitted: online, paper, hospital.",
+                lambda label, help: st.text_input(label, key="claim_submission_method", help=help)
+            )
+
+            field(
+                "Claim Status",
+                "Current processing status of claim.",
+                lambda label, help: st.text_input(label, key="claim_status", help=help)
+            )
+
+            field(
+                "Amount",
+                "Total claimed amount in USD.",
+                lambda label, help: st.number_input(label, min_value=0.0, key="claim_amount", help=help)
+            )
+            
         c_btn2 = st.columns([1, 2, 1])
-
         with c_btn2[1]:
             submitted = st.form_submit_button("Submit Claim", use_container_width=True)
 
 if submitted:
-    gender = st.session_state["patient_gender"]
-    gender = gender if gender in ["Male", "Female", "Other"] else "None"
 
-    query = f"""
+    def is_empty(v):
+        return v is None or str(v).strip() in ["", "None", "Choose an option"]
 
-Age:{st.session_state["patient_age"]}
-Gender:{gender}
-Income:{st.session_state["patient_income"]}
-Employment:{st.session_state["patient_employment"] or "None"}
-Marital:{st.session_state["patient_marital"] or "None"}
-Specialty:{st.session_state["provider_specialty"] or "None"}
-Type:{st.session_state["claim_type"] or "None"}
-Submit:{st.session_state["claim_submission_method"] or "None"}
-Diagnosis:{st.session_state["diagnosis"] or "None"}
-Procedure:{st.session_state["procedure"] or "None"}
-Status:{st.session_state["claim_status"] or "None"}
-Amount:{st.session_state["claim_amount"]}
-"""
-    res = requests.get(API_URL, params={"query": query})
+    def is_invalid_number(v):
+        try:
+            return v is None or float(v) <= 0
+        except:
+            return True
 
-    if res.status_code == 200:
+    def is_invalid_text(v):
+        return v is not None and str(v).strip() not in ["", "None"] and len(str(v).strip()) < 2
+
+    required_fields = {
+        "Age": st.session_state.get("patient_age"),
+        "Gender": st.session_state.get("patient_gender"),
+        "Income": st.session_state.get("patient_income"),
+        "Employment": st.session_state.get("patient_employment"),
+        "Provider Specialty": st.session_state.get("provider_specialty"),
+        "Claim Type": st.session_state.get("claim_type"),
+        "Marital Status": st.session_state.get("patient_marital"),
+        "Diagnosis Code": st.session_state.get("diagnosis"),
+        "Procedure Code": st.session_state.get("procedure"),
+        "Submission Method": st.session_state.get("claim_submission_method"),
+        "Claim Status": st.session_state.get("claim_status"),
+        "Amount": st.session_state.get("claim_amount"),
+    }
+
+    missing = []
+    invalid = []
+
+    for k, v in required_fields.items():
+        if is_empty(v):
+            missing.append(k)
+        else:
+            if k in ["Age", "Income", "Amount"]:
+                if is_invalid_number(v):
+                    invalid.append(k)
+            else:
+                if is_invalid_text(v):
+                    invalid.append(k)
+
+    if missing or invalid:
+        st.error("Input validation failed")
+
+        if missing:
+            st.write("Missing fields:")
+            for f in missing:
+                st.write(f"- {f}")
+
+        if invalid:
+            st.write("Invalid format fields:")
+            for f in invalid:
+                st.write(f"- {f}")
+
+        st.stop()
+
+    payload = {
+        "PatientAge": st.session_state.get("patient_age"),
+        "PatientGender": st.session_state.get("patient_gender"),
+        "PatientIncome": st.session_state.get("patient_income"),
+        "PatientEmploymentStatus": st.session_state.get("patient_employment"),
+        "ProviderSpecialty": st.session_state.get("provider_specialty"),
+        "ClaimType": st.session_state.get("claim_type"),
+        "ClaimAmount": st.session_state.get("claim_amount"),
+    }
+
+    try:
+        res = requests.post(API_URL, json=payload, timeout=20)
+
+        if not res.headers.get("content-type", "").startswith("application/json"):
+            st.error("Invalid API response format")
+            st.stop()
+
         result = res.json()
 
-        decision = result.get("decision", "Pending")
-        reason = result.get("reason", "")
-        confidence = result.get("confidence", 0)
+    except Exception:
+        st.error("System error: cannot connect to API")
+        st.stop()
 
-        if (not reason) or reason == "parse_error":
-            reason = "Not enough information"
+    status = result.get("status")
+    decision = result.get("decision", "Pending")
+    reason = result.get("reason", "")
+    confidence = result.get("confidence")
 
-        st.markdown(f"""
-        <div style="
-            background: #ffffff;
-            border: 1px solid rgba(0,0,0,0.08);
-            border-radius: 16px;
-            padding: 20px;
-            margin-top: 18px;
-            box-shadow: 0 6px 18px rgba(0,0,0,0.06);
-        ">
-            <h3 style="margin-bottom: 10px;">Decision Result</h3>
-            <p><b>Status:</b> {decision}</p>
-            <p><b>Confidence:</b> {confidence}</p>
-            <p><b>Explanation:</b> {reason}</p>
-        </div>
-        """, unsafe_allow_html=True)
+    if status == "invalid_input":
+        st.error("Validation error")
+        for e in result.get("errors", []):
+            st.write(f"- {e['field']}: {e['message']}")
+
+    elif status == "system_error":
+        st.error("System error occurred")
+
+    elif status == "failed":
+        st.warning("OCR failed or no usable text extracted")
+
+    elif status == "ok":
+        st.subheader("Decision Result")
+
+        if decision == "Approved":
+            st.success(f"Status: {decision}")
+        elif decision == "Denied":
+            st.error(f"Status: {decision}")
+        else:
+            st.warning(f"Status: {decision}")
+
+        st.write(f"Confidence: {confidence if confidence is not None else 'N/A'}")
+        st.write(f"Explanation: {reason if reason else 'No explanation provided'}")
 
     else:
-        st.error("API error")
-
-if DEBUG:
-    with st.expander("Raw Text"):
-        st.text(st.session_state["raw_text"])
-
-    with st.expander("State"):
-        st.json(st.session_state)
+        st.error("Unknown response from server")
