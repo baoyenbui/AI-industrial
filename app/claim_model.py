@@ -105,7 +105,38 @@ def safe_json(text):
             return json.loads(text[start:end])
         except:
             return None
+        
+MEDICAL_ANCHORS = [
+    "medical procedure cpt treatment service billing code",
+    "hospital visit therapy diagnosis claim procedure",
+]
 
+ADDRESS_ANCHORS = [
+    "home address city state zip postal code street avenue road",
+    "location new york california texas zip code address",
+]
+
+anchor_emb_med = model.encode(MEDICAL_ANCHORS, normalize_embeddings=True)
+anchor_emb_addr = model.encode(ADDRESS_ANCHORS, normalize_embeddings=True)
+
+context_cache = {}
+
+def classify_context(context):
+    if not context.strip():
+        return 0
+    if context in context_cache:
+        emb = context_cache[context]
+    else:
+        emb = model.encode([context], normalize_embeddings=True)[0]
+        context_cache[context] = emb
+    med_score = np.max(np.dot(anchor_emb_med, emb))
+    addr_score = np.max(np.dot(anchor_emb_addr, emb))
+    return med_score - addr_score
+
+def proximity_bonus(context):
+    if re.search(r'(procedure|cpt|treatment|service)', context):
+        return 0.2
+    return 0
 
 def rule_extract(text):
     t = text.lower()
@@ -115,21 +146,47 @@ def rule_extract(text):
         "PatientGender": None,
         "PatientEmploymentStatus": None,
         "PatientMaritalStatus": None,
+        "PatientIncome": None,
+        "ProviderSpecialty": None,
+        "ClaimType": None,
+        "ClaimSubmissionMethod": None,
         "DiagnosisCode": None,
         "ProcedureCode": None,
-        "ClaimAmount": None
+        "ClaimAmount": None,
+        "ClaimStatus": None,
     }
 
-    if "male" in t and "female" not in t:
-        data["PatientGender"] = "Male"
-    elif "female" in t:
+    if "female" in t:
         data["PatientGender"] = "Female"
+    elif "male" in t:
+        data["PatientGender"] = "Male"
 
-    age = re.search(r"(\d{1,3})\s*(years?|age|yo)", t)
+    age = None
+
+    age = re.search(r"\bage\s*[:\-]?\s*(\d{1,3})\b", t)
+
+    if not age:
+        age = re.search(r"\b(\d{1,3})\s*(?:years?\s*old|y\.o\.?)\b", t)
+
+    if not age:
+        for m in re.finditer(r"\b(\d{1,3})\b", t):
+            val = safe_int(m.group(1))
+            if not val or not (0 < val <= 120):
+                continue
+
+            start = max(0, m.start() - 30)
+            context = t[start:m.start()]
+
+            if re.search(r"(age|patient|yo|y\.o\.|years?)", context):
+                age = m
+                break
+
     if age:
-        data["PatientAge"] = safe_int(age.group(1))
+        val = safe_int(age.group(1))
+        if val and 0 < val <= 120:
+            data["PatientAge"] = val
 
-    emp = re.search(r"(employed|unemployed|self[- ]employed|freelance|contractor|student|retired)", t)
+    emp = re.search(r"(self[- ]employed|unemployed|employed|freelance|contractor|student|retired)", t)
     if emp:
         data["PatientEmploymentStatus"] = emp.group(1)
 
@@ -137,17 +194,98 @@ def rule_extract(text):
     if marital:
         data["PatientMaritalStatus"] = marital.group(1)
 
-    amt = re.findall(r"total\s*[:$]?\s*([\d.,]+)", t)
-    if amt:
-        data["ClaimAmount"] = safe_float(amt[-1])
+    income = re.search(r"(?:income|salary|monthly income)\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d+)?)", t)
+    if income:
+        data["PatientIncome"] = safe_float(income.group(1))
+
+    for pat in [r"(?:total|amount|claim amount|billed|charged)\s*[:\-]?\s*\$?\s*([\d,]+(?:\.\d+)?)", r"\$\s*([\d,]+(?:\.\d+)?)"]:
+        amt = re.findall(pat, t)
+        if amt:
+            data["ClaimAmount"] = safe_float(amt[-1])
+            break
+
+    diag = re.search(r"\b([A-Z]\d{2}(?:\.\d{1,4})?)\b", text)
+    if diag:
+        data["DiagnosisCode"] = diag.group(1)
+
+    proc = re.search(r"(?:procedure|cpt|treatment|service|code)\s*[:\-#]?\s*(\d{5})\b", t)
+
+    candidates = []
+
+    if proc:
+        code = proc.group(1)
+        if int(code) >= 10000:
+            start = max(0, proc.start() - 80)
+            end = min(len(t), proc.end() + 80)
+            context = t[start:end]
+
+            if not re.search(r'\b[a-z\s]+ (ny|ca|tx|fl|nj)?\s*' + code + r'\b', context) and \
+               not re.search(r'\d+\s+[a-z]+\s+(street|st|road|rd|ave|blvd)', context):
+
+                score = classify_context(context) + proximity_bonus(context)
+
+                if score > 0.2:
+                    data["ProcedureCode"] = code
+                else:
+                    proc = None
+        else:
+            proc = None
+
+    if not proc:
+        for m in re.finditer(r"\b(\d{5})\b", t):
+            code = m.group(1)
+            code_int = int(code)
+
+            if code_int < 10000:
+                continue
+
+            start = max(0, m.start() - 80)
+            end = min(len(t), m.end() + 80)
+            context = t[start:end]
+
+            if re.search(r'\b[a-z\s]+ (ny|ca|tx|fl|nj)?\s*' + code + r'\b', context):
+                continue
+
+            if re.search(r'\d+\s+[a-z]+\s+(street|st|road|rd|ave|blvd)', context):
+                continue
+
+            score = classify_context(context) + proximity_bonus(context)
+            candidates.append((code, score))
+
+        if candidates:
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            best_code, best_score = candidates[0]
+
+            if best_score > 0.2:
+                data["ProcedureCode"] = best_code
+
+    for s in ["cardiology","orthopedics","general surgery","pediatrics","neurology",
+              "oncology","radiology","dermatology","psychiatry","gynecology",
+              "urology","ophthalmology","emergency","internal medicine","family medicine"]:
+        if s in t:
+            data["ProviderSpecialty"] = s
+            break
+
+    for ct in ["medical","dental","vision","pharmacy","mental health","maternity"]:
+        if ct in t:
+            data["ClaimType"] = ct
+            break
+
+    for sm in ["online","paper","hospital","fax","mail","electronic"]:
+        if sm in t:
+            data["ClaimSubmissionMethod"] = sm
+            break
+
+    for st in ["approved","denied","pending","appealed","paid","rejected"]:
+        if st in t:
+            data["ClaimStatus"] = st
+            break
 
     def valid(v):
         return v is not None and str(v).strip().lower() not in ["", "none"]
 
     score = sum(valid(v) for v in data.values())
-
     return data, score
-
 
 def llm_fix(text, partial):
     prompt = f"""
@@ -184,7 +322,6 @@ PatientAge, PatientGender, PatientEmploymentStatus, PatientMaritalStatus, Diagno
     except:
         return partial
 
-
 def retrieve_similar(query):
     q = clean_query(query)
     if not q:
@@ -197,7 +334,6 @@ def retrieve_similar(query):
 
     return "\n".join(df.iloc[i]["text"] for i in I[0] if i < len(df))
 
-
 def parse_query(query):
     data = {}
     for line in query.split("\n"):
@@ -205,7 +341,6 @@ def parse_query(query):
             k, v = line.split(":", 1)
             data[k.strip().lower()] = v.strip()
     return data
-
 
 def detect_missing(data):
     required = [
@@ -239,7 +374,6 @@ def detect_missing(data):
                 missing.append(k)
 
     return missing
-
 
 def get_decision(query, sim):
 
@@ -279,7 +413,6 @@ QUERY:
 SIMILAR:
 {sim}
 """
-
     try:
         res = client.chat.completions.create(
             model="llama-3.1-8b-instant",
@@ -308,12 +441,10 @@ SIMILAR:
             "confidence": 0.0
         }
 
-
 def get_claim_approval(query):
     query = clean_query(query)
     sim = retrieve_similar(query)
     return get_decision(query, sim)
-
 
 def ocr_pipeline(file):
     try:
