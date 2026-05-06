@@ -93,18 +93,27 @@ def safe_int(x):
         return None
 
 
-def safe_json(text):
+def safe_json(text: str):
     if not text:
         return None
+    
+    text = text.strip()
+    text = re.sub(r'^```(?:json)?\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*```$', '', text)
+    
     try:
         return json.loads(text)
     except:
-        try:
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            return json.loads(text[start:end])
-        except:
-            return None
+        pass
+    
+    try:
+        match = re.search(r'(\{.*\})', text, re.DOTALL)
+        if match:
+            return json.loads(match.group(1))
+    except:
+        pass
+    
+    return None
         
 MEDICAL_ANCHORS = [
     "medical procedure cpt treatment service billing code",
@@ -289,16 +298,39 @@ def rule_extract(text):
 
 def llm_fix(text, partial):
     prompt = f"""
-Return ONLY valid JSON.
+You are an expert medical claims data extractor.
+
+Return ONLY a valid JSON object. No explanation, no markdown, no extra text.
+
+Rules:
+- Use the PARTIAL extraction as a base.
+- Correct or fill in any missing/incorrect fields from the TEXT.
+- For any field that cannot be clearly determined, use an empty string "".
+- Do NOT use "Unknown", "N/A", "null", None, or any other placeholder.
+- PatientAge and ClaimAmount must be numbers (integer/float) or "".
+- All other fields must be strings or "".
 
 TEXT:
 {text}
 
-PARTIAL:
-{json.dumps(partial)}
+PARTIAL EXTRACTION (reference only):
+{json.dumps(partial, indent=2)}
 
-FIELDS:
-PatientAge, PatientGender, PatientEmploymentStatus, PatientMaritalStatus, DiagnosisCode, ProcedureCode, ClaimAmount
+Required output fields:
+- PatientAge
+- PatientGender
+- PatientEmploymentStatus
+- PatientMaritalStatus
+- PatientIncome
+- ProviderSpecialty
+- ClaimType
+- ClaimSubmissionMethod
+- DiagnosisCode
+- ProcedureCode
+- ClaimAmount
+- ClaimStatus
+
+Return only the complete JSON object.
 """
 
     try:
@@ -335,50 +367,76 @@ def retrieve_similar(query):
     return "\n".join(df.iloc[i]["text"] for i in I[0] if i < len(df))
 
 def parse_query(query):
+    if not query:
+        return {}
+    
+    parsed = safe_json(query)
+    if isinstance(parsed, dict):
+        return parsed
+    
     data = {}
-    for line in query.split("\n"):
+    for line in str(query).split("\n"):
         if ":" in line:
             k, v = line.split(":", 1)
-            data[k.strip().lower()] = v.strip()
+            key = k.strip().lower()
+            value = v.strip()
+            if value:
+                data[key] = value
     return data
 
+
 def detect_missing(data):
-    required = [
-        "age",
-        "gender",
-        "income",
-        "employment",
-        "amount"
-    ]
-
+    required = ["age", "gender", "income", "employment", "amount"]
     missing = []
-
+    
+    normalized = {}
+    key_mapping = {
+        "patientage": "age", "age": "age",
+        "patientgender": "gender", "gender": "gender",
+        "patientincome": "income", "income": "income",
+        "patientemploymentstatus": "employment",
+        "employmentstatus": "employment", 
+        "employment": "employment",
+        "claimamount": "amount", "amount": "amount",
+        "patientage": "age", "claimamount": "amount"
+    }
+    
+    for k, v in data.items():
+        k_lower = str(k).lower().replace(" ", "").replace("_", "")
+        std_key = key_mapping.get(k_lower, k_lower)
+        normalized[std_key] = v
+    
     for k in required:
-        v = data.get(k)
-
-        if v is None:
+        v = normalized.get(k)
+        if v is None or str(v).strip() == "":
             missing.append(k)
             continue
-
-        v = str(v).strip().lower()
-
-        if v in ["", "none", "unknown"]:
+            
+        v_str = str(v).strip().lower()
+        if v_str in ["none", "unknown", "null"]:
             missing.append(k)
             continue
-
+            
         if k in ["age", "income", "amount"]:
             try:
-                if float(v) <= 0:
+                val = float(v_str)
+                if val <= 0:
                     missing.append(k)
             except:
                 missing.append(k)
-
     return missing
 
-def get_decision(query, sim):
 
+def get_claim_approval(query):
+    if not query:
+        return {"status": "error", "decision": "Pending", "reason": "empty_query"}
+    
+    sim = retrieve_similar(query)
+    return get_decision(query, sim)
+
+
+def get_decision(query: str, sim: str = ""):
     parsed = parse_query(query)
-
     missing = detect_missing(parsed)
 
     if missing:
@@ -386,65 +444,115 @@ def get_decision(query, sim):
             "status": "ok",
             "decision": "Pending",
             "reason": "missing_required_fields",
-            "confidence": 0.0
+            "missing_fields": missing,
+            "confidence": 0.8
         }
 
-    income = parsed.get("income")
     try:
-        if income and float(income) <= 0:
+        income = float(parsed.get("income") or parsed.get("patientincome") or 0)
+        if income <= 0:
             return {
                 "status": "ok",
                 "decision": "Denied",
                 "reason": "income <= 0",
-                "confidence": 1.0
+                "confidence": 0.95
             }
     except:
         pass
 
+
     prompt = f"""
-Return ONLY JSON.
+You are a strict health insurance claim approval system.
 
-RULES:
-- Otherwise Approved
+Return **ONLY** valid JSON. No explanations, no markdown, no extra text.
 
-QUERY:
+Rules:
+- Approved: All information complete, reasonable values, no red flags.
+- Denied: Clear fraud risk, impossible values, or policy violation.
+- Pending: Missing context, borderline cases, needs manual review.
+
+QUERY DATA:
 {query}
 
-SIMILAR:
-{sim}
+SIMILAR CASES:
+{sim if sim else "No similar cases available."}
+
+Respond exactly in this format:
+{{
+  "decision": "Approved" | "Pending" | "Denied",
+  "reason": "short and clear reason in 10 words or less",
+  "confidence": 0.85
+}}
 """
+
     try:
         res = client.chat.completions.create(
             model="llama-3.1-8b-instant",
-            temperature=0,
-            messages=[{"role": "user", "content": prompt}]
+            temperature=0.0,        
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}],
+            # Groq supports this:
+            response_format={"type": "json_object"}   # ← VERY IMPORTANT
         )
 
-        parsed = safe_json(res.choices[0].message.content)
+        content = res.choices[0].message.content
+        result = safe_json(content)
 
-        if not parsed:
-            return {
-                "status": "ok",
-                "decision": "Pending",
-                "reason": "invalid_llm_output",
-                "confidence": 0.0
-            }
+        if not result or not isinstance(result, dict):
+            # Fallback retry with stronger instruction
+            return retry_with_fallback(prompt, content)
 
-        parsed["status"] = "ok"
-        return parsed
+        result["status"] = "ok"
+        if "confidence" not in result:
+            result["confidence"] = 0.7
+            
+        return result
 
     except Exception as e:
         return {
             "status": "system_error",
             "decision": "Pending",
-            "reason": str(e),
-            "confidence": 0.0
+            "reason": "llm_error",
+            "confidence": 0.0,
+            "error_detail": str(e)[:80]
         }
 
-def get_claim_approval(query):
-    query = clean_query(query)
-    sim = retrieve_similar(query)
-    return get_decision(query, sim)
+
+def retry_with_fallback(prompt: str, previous_output: str):
+    """One retry attempt"""
+    fallback_prompt = f"""
+Previous attempt failed to return clean JSON.
+
+{ prompt }
+
+Previous bad output was:
+{previous_output[:400]}
+
+Return clean JSON only.
+"""
+
+    try:
+        res = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            temperature=0.0,
+            max_tokens=250,
+            messages=[{"role": "user", "content": fallback_prompt}],
+            response_format={"type": "json_object"}
+        )
+        
+        result = safe_json(res.choices[0].message.content)
+        if result and isinstance(result, dict):
+            result["status"] = "ok"
+            return result
+    except:
+        pass
+
+    return {
+        "status": "ok",
+        "decision": "Pending",
+        "reason": "invalid_llm_output",
+        "confidence": 0.5
+    }
 
 def ocr_pipeline(file):
     try:
