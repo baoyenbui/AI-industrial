@@ -16,26 +16,25 @@ def home():
 def build_query(data: dict):
     def norm(v):
         if v is None or v == "":
-            return "unknown"
-        return str(v)
+            return ""
+        return str(v).strip()
 
     return f"""
-Age:{norm(data.get('PatientAge'))}
-Gender:{norm(data.get('PatientGender'))}
-Income:{norm(data.get('PatientIncome'))}
-Employment:{norm(data.get('PatientEmploymentStatus'))}
-Specialty:{norm(data.get('ProviderSpecialty'))}
-Type:{norm(data.get('ClaimType'))}
-Diagnosis:{norm(data.get('DiagnosisCode'))}
-Procedure:{norm(data.get('ProcedureCode'))}
-Amount:{norm(data.get('ClaimAmount'))}
+PatientAge: {norm(data.get('PatientAge'))}
+PatientGender: {norm(data.get('PatientGender'))}
+PatientIncome: {norm(data.get('PatientIncome'))}
+PatientEmploymentStatus: {norm(data.get('PatientEmploymentStatus'))}
+ProviderSpecialty: {norm(data.get('ProviderSpecialty'))}
+ClaimType: {norm(data.get('ClaimType'))}
+DiagnosisCode: {norm(data.get('DiagnosisCode'))}
+ProcedureCode: {norm(data.get('ProcedureCode'))}
+ClaimAmount: {norm(data.get('ClaimAmount'))}
 """.strip()
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = []
-
     for e in exc.errors():
         field = ".".join(str(x) for x in e["loc"] if x != "body")
         errors.append({
@@ -53,6 +52,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "errors": errors
         }
     )
+
 
 @app.post("/predict")
 def predict(data: ClaimInput):
@@ -73,6 +73,7 @@ def predict(data: ClaimInput):
             "confidence": 0.0,
             "reason": "backend_exception"
         }
+
 
 @app.post("/ocr-claim")
 def ocr_claim(file: UploadFile = File(...)):
