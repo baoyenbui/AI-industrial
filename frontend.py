@@ -10,8 +10,6 @@ OCR_API_URL = "http://127.0.0.1:8000/ocr-claim"
 
 st.set_page_config(page_title="Health Claim AI", layout="wide")
 
-DEBUG = st.sidebar.toggle("Debug mode", value=False)
-
 st.markdown("""
 <style>
 .stApp {
@@ -245,13 +243,15 @@ def safe_float(x):
     except:
         return 0.0
 
-
 def field(label, help_html, widget):
-    error_fields = st.session_state.get("error_fields", []) if st.session_state.get("_show_errors", False) else []
-    has_error = label in error_fields
+    error_fields = st.session_state.get("error_fields", [])
+    show_errors = st.session_state.get("_show_errors", False)
+
+    has_error = label in error_fields if show_errors else False
+
     color = "#CC0000" if has_error else "inherit"
     icon_border = f"border-color:{color};color:{color}"
-    error_star = "<span style='color:#CC0000'> *</span>" if has_error else ""
+    error_star = "<span style='color:#CC0000'>*</span>" if has_error else ""
 
     st.markdown(
         f"<div style='margin-bottom:4px;font-weight:600;color:{color};line-height:1.6'>"
@@ -262,23 +262,21 @@ def field(label, help_html, widget):
         f"</div>",
         unsafe_allow_html=True
     )
-    result = widget(label=label, help=None, label_visibility="collapsed")
-    return result
 
+    return widget(label=label, help=None, label_visibility="collapsed")
 
 def normalize_gender(x):
     x = clean_text(x)
-    if not x:
-        return "Male"
+    if not x or x == "Choose the gender":
+        return ""
     x = x.lower()
-    if "male" in x and "female" not in x:
+    if "male" in x:
         return "Male"
     if "female" in x:
         return "Female"
     if "other" in x:
         return "Other"
-    return "Male"
-
+    return ""
 
 def merge_ocr_results(results: list[dict]) -> dict:
     NUMERIC_SUM_FIELDS = {"ClaimAmount", "PatientIncome"}
@@ -303,7 +301,7 @@ def merge_ocr_results(results: list[dict]) -> dict:
 
 init_state = {
     "patient_age": 0,
-    "patient_gender": "Male",
+    "patient_gender": "Choose the gender",
     "patient_income": 0.0,
     "patient_employment": "",
     "patient_marital": "",
@@ -332,48 +330,79 @@ left, right = st.columns([1, 1.2])
 with left:
     st.markdown("<h3 style='margin-bottom:10px;'>Upload Documents</h3>", unsafe_allow_html=True)
 
+
     uploaded_files = st.file_uploader(
         "Select Images (multiple allowed)",
         type=["png", "jpg", "jpeg"],
-        accept_multiple_files=True,   
+        accept_multiple_files=True,  
     )
 
+
     if uploaded_files:
-        st.session_state["_uploaded_images"] = [
-            {"bytes": f.getvalue(), "name": f.name}
-            for f in uploaded_files
-        ]
+            st.session_state["_uploaded_images"] = [
+                {"bytes": f.getvalue(), "name": f.name}
+                for f in uploaded_files
+            ]
+    else:
+        if "_uploaded_images" in st.session_state and len(st.session_state["_uploaded_images"]) > 0:
+            st.session_state["_uploaded_images"] = []
+
 
     images_data = st.session_state.get("_uploaded_images", [])
+
 
     if images_data:
         n = len(images_data)
         st.markdown(
-            f"<div style='font-size:12px;color:#555;margin-bottom:6px;'>"
+            f"<div style='text-align:center; font-size:13px; color:#555; margin:12px 0 16px 0;'>"
             f"{n} image{'s' if n > 1 else ''} selected</div>",
             unsafe_allow_html=True,
         )
 
-        thumb_cols = st.columns(min(n, 4))  
-        for idx, img_info in enumerate(images_data):
-            col_idx = idx % 4
-            with thumb_cols[col_idx]:
-                img = Image.open(io.BytesIO(img_info["bytes"]))
-                w = 80
-                h = int(w * img.height / img.width)
-                img_resized = img.resize((w, h), Image.LANCZOS)
-                st.image(img_resized, width=w, caption=img_info["name"][:14])
 
-        col_btn = st.columns([1, 1, 1])
+        if n <= 2:
+            thumb_width = 160
+        elif n <= 4:
+            thumb_width = 120
+        else:
+            thumb_width = 95
+
+
+        cols_per_row = min(n, 5)
+        thumb_cols = st.columns(cols_per_row)
+        for idx, img_info in enumerate(images_data):
+                    with thumb_cols[idx % cols_per_row]:
+                        try:
+                            img = Image.open(io.BytesIO(img_info["bytes"]))
+                            aspect_ratio = img.height / img.width
+                            new_height = int(thumb_width * aspect_ratio)
+                           
+                            img_resized = img.resize((thumb_width, new_height), Image.LANCZOS)
+                           
+                            st.image(
+                                img_resized,
+                                width=thumb_width,          
+                                caption=img_info["name"][:14]
+                            )
+                        except:
+                            st.error(f"Cannot load {img_info['name']}")
+
+
+        st.markdown("<div style='margin-bottom: 28px;'></div>", unsafe_allow_html=True)
+
+
+        col_btn = st.columns([1, 2, 1])
         with col_btn[1]:
             run_ocr = st.button(
                 f"Run OCR ({n} image{'s' if n > 1 else ''})",
                 use_container_width=True,
             )
 
+
         if run_ocr:
             all_extracted: list[dict] = []
             ocr_errors: list[str] = []
+
 
             progress = st.progress(0, text="Running OCR…")
             for i, img_info in enumerate(images_data):
@@ -387,24 +416,23 @@ with left:
                     if res.status_code == 200:
                         data = res.json().get("extracted_data", {})
                         all_extracted.append(data)
-                        if DEBUG:
-                            st.write(f"OCR [{img_info['name']}] raw:", res.json())
                     else:
                         ocr_errors.append(f"{img_info['name']}: HTTP {res.status_code}")
                 except Exception as e:
                     ocr_errors.append(f"{img_info['name']}: {e}")
 
+
             progress.progress(1.0, text="Done!")
+
 
             if ocr_errors:
                 for err in ocr_errors:
                     st.warning(f"OCR error — {err}")
 
+
             if all_extracted:
                 merged = merge_ocr_results(all_extracted)
 
-                if DEBUG:
-                    st.write("Merged OCR data:", merged)
 
                 st.session_state["patient_age"]               = safe_int(merged.get("PatientAge"))
                 st.session_state["patient_gender"]            = normalize_gender(merged.get("PatientGender"))
@@ -421,6 +449,17 @@ with left:
                 st.session_state["error_fields"]              = []
                 st.session_state["_show_errors"]              = False
                 st.rerun()
+   
+    else:
+        st.markdown(
+            """
+            <div style='text-align:center; color:#888; font-size:14.5px;
+                        margin-top: 50px; margin-bottom: 50px;'>
+                <em>No images uploaded yet.</em>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 with right:
     st.markdown("<h3 style='margin-bottom:10px;'>Claim Information</h3>", unsafe_allow_html=True)
@@ -443,7 +482,7 @@ with right:
                 "Gender",
                 "<b>Patient gender</b>.",
                 lambda label, help, label_visibility: st.selectbox(
-                    label, ["Male", "Female", "Other"],
+                    label, ["Choose the gender","Male", "Female", "Other"],
                     key="patient_gender", help=help, label_visibility=label_visibility)
             )
 
@@ -536,17 +575,19 @@ with right:
             submitted = st.form_submit_button("Submit Claim", use_container_width=True)
 
 if submitted:
-    st.session_state["error_fields"] = []
 
     def is_empty(v):
-        return v is None or (isinstance(v, str) and v.strip() in ["", "None", "Choose an option"])
+        if v is None:
+            return True
+        if isinstance(v, str):
+            return v.strip() in ["", "None", "Choose the gender", "Choose an option"]
+        return False
 
-    def is_invalid_number(v, allow_zero=False):
+    def is_invalid_number(v):
         try:
             if v is None:
                 return True
-            v = float(v)
-            return v < 0 if allow_zero else v <= 0
+            return float(v) <= 0
         except:
             return True
 
@@ -562,10 +603,10 @@ if submitted:
         return re.sub(r"[^\w\.]", "", str(v)).strip()
 
     def safe_int(x):
-        if x is None:
+        try:
+            return int(re.findall(r"\d+", str(x))[0])
+        except:
             return 0
-        m = re.findall(r"\d+", str(x))
-        return int(m[0]) if m else 0
 
     def safe_float(x):
         try:
@@ -588,94 +629,51 @@ if submitted:
         "Amount (USD)": st.session_state.get("claim_amount"),
     }
 
-    missing = []
+    missing = [k for k, v in required_fields.items() if is_empty(v)]
     invalid = []
 
     for k, v in required_fields.items():
-        if is_empty(v):
-            missing.append(k)
+        if k in missing:
+            continue
+        if k in ["Age", "Income (USD/month)", "Amount (USD)"]:
+            if is_invalid_number(v):
+                invalid.append(k)
         else:
-            if k == "Age":
-                if is_invalid_number(v, allow_zero=False):
-                    invalid.append(k)
-            elif k in ["Income (USD/month)", "Amount (USD)"]:
-                if is_invalid_number(v):
-                    invalid.append(k)
-            else:
-                if is_invalid_text(v):
-                    invalid.append(k)
+            if is_invalid_text(v):
+                invalid.append(k)
 
-    if missing or invalid:
-        st.session_state["error_fields"] = missing + invalid
-        st.session_state["_show_errors"] = True
+    error_fields = missing + invalid
 
-        if len(missing + invalid) == 1:
-            st.error(f"Please check the field: **{(missing + invalid)[0]}**")
-        elif len(missing + invalid) <= 3:
-            st.error(f"Please check: **{', '.join(missing + invalid)}**")
-        else:
-            st.error(f"Please fill in all required fields before submitting. ({len(missing + invalid)} fields incomplete)")
+    st.session_state["error_fields"] = error_fields
+    st.session_state["_show_errors"] = True
 
+    if error_fields:
         st.rerun()
 
-    st.session_state["error_fields"] = []
-    st.session_state["_show_errors"] = False
-
-    age_raw = st.session_state.get("patient_age")
-
     payload = {
-        "PatientAge": safe_int(age_raw),
-        "PatientGender": st.session_state.get("patient_gender"),
+        "PatientAge": safe_int(st.session_state.get("patient_age")),
+        "PatientGender": st.session_state.get("patient_gender") or "Female",
         "PatientIncome": safe_float(st.session_state.get("patient_income")),
-        "PatientEmploymentStatus": st.session_state.get("patient_employment"),
-        "ProviderSpecialty": st.session_state.get("provider_specialty"),
-        "ClaimType": st.session_state.get("claim_type"),
+        "PatientEmploymentStatus": st.session_state.get("patient_employment") or "employed",
+        "ProviderSpecialty": st.session_state.get("provider_specialty") or "General Medicine",
+        "ClaimType": st.session_state.get("claim_type") or "medical",
         "ClaimAmount": safe_float(st.session_state.get("claim_amount")),
-        "DiagnosisCode": normalize_code(st.session_state.get("diagnosis")),
-        "ProcedureCode": normalize_code(st.session_state.get("procedure")),
-        "ClaimSubmissionMethod": st.session_state.get("claim_submission_method"),
-        "ClaimStatus": st.session_state.get("claim_status"),
-        "PatientMaritalStatus": st.session_state.get("patient_marital"),
-    }
-
-    REASON_TO_FIELD = {
-        "Missing diagnosis": "Diagnosis Code",
-        "Income is 0": "Income (USD/month)",
-        "missing_required_fields": "one or more required fields",
-        "validation_failed": "one or more fields",
+        "DiagnosisCode": normalize_code(st.session_state.get("diagnosis")) or "J18.9",
+        "ProcedureCode": normalize_code(st.session_state.get("procedure")) or "99213",
+        "ClaimSubmissionMethod": st.session_state.get("claim_submission_method") or "online",
+        "ClaimStatus": st.session_state.get("claim_status") or "pending",
+        "PatientMaritalStatus": st.session_state.get("patient_marital") or "single",
     }
 
     try:
-        res = requests.post(API_URL, json=payload, timeout=20)
-
-        if not res.headers.get("content-type", "").startswith("application/json"):
-            st.error("Invalid API response format")
-            st.stop()
+        with st.spinner("Processing claim..."):
+            res = requests.post(API_URL, json=payload, timeout=25)
 
         result = res.json()
 
-    except:
-        st.error("System error: cannot connect to API")
-        st.stop()
-
-    status = result.get("status")
-    decision = result.get("decision", "Pending")
-    reason = result.get("reason", "")
-    confidence = result.get("confidence")
-
-    if status == "invalid_input":
-        st.error("Validation error")
-        for e in result.get("errors", []):
-            st.write(f"- {e['field']}: {e['message']}")
-
-    elif status == "system_error":
-        st.error("System error occurred")
-
-    elif status == "failed":
-        st.warning("OCR failed or no usable text extracted")
-
-    elif status == "ok":
-        st.subheader("Decision Result")
+        decision = result.get("decision", "Pending")
+        reason = result.get("reason", "")
+        confidence = result.get("confidence")
 
         if decision == "Approved":
             st.success(f"Status: {decision}")
@@ -686,8 +684,17 @@ if submitted:
 
         st.write(f"Confidence: {confidence if confidence is not None else 'N/A'}")
 
-        explanation = REASON_TO_FIELD.get(reason, reason or "No explanation provided")
-        st.write(f"Explanation: {explanation}")
+        explanation_map = {
+            "missing_required_fields": "One or more required fields are missing or invalid",
+            "income <= 0": "Patient income must be greater than 0",
+            "validation_failed": "Some fields contain invalid data",
+            "Missing diagnosis": "Diagnosis Code is required"
+        }
 
-    else:
-        st.error("Unknown response from server")
+        st.write(f"Explanation: {explanation_map.get(reason, reason or 'No explanation provided')}")
+
+        st.session_state["_show_errors"] = False
+        st.session_state["error_fields"] = []
+
+    except Exception as e:
+        st.error(f"Unexpected error: {str(e)}")
