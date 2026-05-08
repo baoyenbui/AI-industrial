@@ -1,18 +1,28 @@
-faiss-cpu==1.10.0
+# Core Framework
 fastapi==0.115.11
-huggingface-hub==0.29.1
-openai==1.65.2
-requests==2.32.3
-sentence-transformers==3.4.1
-streamlit==1.42.2
-torch==2.6.0
-tqdm==4.67.1
-transformers==4.49.0
 uvicorn==0.34.0
-requests==2.32.3
+streamlit==1.42.2
+
+# Database
+sqlalchemy==2.0.38
+python-dotenv==1.0.1
+
+# AI & ML
 groq==0.4.2
-pandas==2.2.2
+sentence-transformers==3.4.1
+transformers==4.49.0
+faiss-cpu==1.10.0
+torch==2.6.0
 numpy==1.26.4
+pandas==2.2.2
+
+# OCR & Image
 pytesseract==0.3.13
 Pillow==10.4.0
 opencv-python==4.10.0.84
+
+# Utils
+requests==2.32.3
+tqdm==4.67.1
+huggingface-hub==0.29.1
+

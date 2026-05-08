@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field, field_validator, ValidationError
+from jsonschema import ValidationError
+from pydantic import BaseModel, Field, field_validator
 from typing import Literal, Optional
 import re
 
@@ -12,6 +13,7 @@ class ClaimInput(BaseModel):
     PatientIncome: Optional[float] = Field(default=0.0, ge=0)
 
     PatientEmploymentStatus: Optional[str] = "unknown"
+    PatientMaritalStatus: Optional[str] = "unknown"
 
     ProviderSpecialty: Optional[str] = "unknown"
     ClaimType: Optional[str] = "unknown"
@@ -21,13 +23,17 @@ class ClaimInput(BaseModel):
 
     ClaimAmount: Optional[float] = Field(default=0.0, ge=0)
 
+    PolicyNumber: Optional[str] = Field(default="", alias="PolicyNumber")
+    DateOfService: Optional[str] = Field(default="", alias="DateOfService")
+    HospitalName: Optional[str] = Field(default="", alias="HospitalName")
+    PreAuthorizationStatus: Optional[Literal["Yes", "No"]] = "No"
+
     @field_validator("PatientGender", mode="before")
     @classmethod
     def gender(cls, v):
         if not v:
             return "Other"
         v = str(v).lower()
-
         if "male" in v and "female" not in v:
             return "Male"
         if "female" in v:
@@ -39,9 +45,7 @@ class ClaimInput(BaseModel):
     def emp(cls, v):
         if not v:
             return "unknown"
-
         v = str(v).lower()
-
         if any(x in v for x in ["employed", "working"]):
             return "employed"
         if any(x in v for x in ["unemployed", "jobless"]):
@@ -52,20 +56,53 @@ class ClaimInput(BaseModel):
             return "student"
         if "retired" in v:
             return "retired"
-
         return "unknown"
+
+    @field_validator("PatientMaritalStatus", mode="before")
+    @classmethod
+    def marital(cls, v):
+        if not v:
+            return "unknown"
+        v = str(v).lower()
+        if any(x in v for x in ["single", "unmarried"]):
+            return "single"
+        if "married" in v:
+            return "married"
+        if "divorced" in v:
+            return "divorced"
+        if any(x in v for x in ["widow", "widower"]):
+            return "widowed"
+        return "unknown"
+
+    @field_validator("PolicyNumber", mode="before")
+    @classmethod
+    def policy_number(cls, v):
+        if not v:
+            return ""
+        return str(v).strip().upper()
+
+    @field_validator("DateOfService", mode="before")
+    @classmethod
+    def date_of_service(cls, v):
+        if not v:
+            return ""
+        return str(v).strip()
+
+    @field_validator("HospitalName", mode="before")
+    @classmethod
+    def hospital_name(cls, v):
+        if not v:
+            return ""
+        return str(v).strip()
 
     @field_validator("DiagnosisCode", "ProcedureCode", "ProviderSpecialty", "ClaimType", mode="before")
     @classmethod
     def clean_text(cls, v):
         if not v:
             return "UNKNOWN"
-
         v = str(v).strip()
-
         if len(v) < 2:
             return "UNKNOWN"
-
         return v
 
 
@@ -88,24 +125,29 @@ async def validation_exception_handler(request, exc):
 @app.post("/predict")
 def predict(data: ClaimInput):
     try:
-        if data.PatientIncome == 0:
-            return {
-                "decision": "Denied",
-                "reason": "Income is 0",
-                "confidence": 0.99
-            }
+        if data.PatientAge is None or data.PatientAge == 0:
+            return {"decision": "Pending", "reason": "Missing patient age", "confidence": 0.6}
 
-        if not data.DiagnosisCode or data.DiagnosisCode == "UNKNOWN":
+        if data.ClaimAmount is None or data.ClaimAmount <= 0:
+            return {"decision": "Denied", "reason": "Invalid claim amount", "confidence": 0.9}
+
+        if not data.PolicyNumber:
             return {
                 "decision": "Pending",
-                "reason": "Missing diagnosis",
-                "confidence": 0.6
+                "reason": "Policy number is missing (will be reviewed manually)",
+                "confidence": 0.65,
+                "needs_manual_review": True
             }
+
+        if data.ClaimAmount > 50000000 and not data.PreAuthorizationStatus == "Yes":
+            return {"decision": "Pending", "reason": "High amount without pre-authorization", "confidence": 0.7}
 
         return {
             "decision": "Approved",
             "reason": "All conditions satisfied",
-            "confidence": 0.95
+            "confidence": 0.92,
+            "policy_number": data.PolicyNumber,
+            "hospital_name": data.HospitalName
         }
 
     except Exception as e:
