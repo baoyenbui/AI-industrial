@@ -67,7 +67,7 @@ It also supports reimbursement estimation and fraud risk detection.
 
 ## 3. System Architecture
 
-The system is designed as a multi-layer pipeline:
+The system follows a multi-layer pipeline architecture:
 
 ### Input Layer
 - Structured form input  
@@ -80,7 +80,7 @@ The system is designed as a multi-layer pipeline:
 
 ### Retrieval Layer (RAG)
 - FAISS similarity search  
-- Retrieval of:
+- Retrieves:
   - similar claims  
   - policy rules  
   - fraud patterns  
@@ -108,7 +108,7 @@ The system is designed as a multi-layer pipeline:
 
 ### Audit Layer
 - Immutable audit logs  
-- Tracks all actions on claims and knowledge updates  
+- Tracks all actions on claims and knowledge updates   
 
 ---
 
@@ -156,6 +156,7 @@ Stores all system activity:
 - system/user actions  
 
 Purpose: security and compliance, full traceability, debugging and monitoring  
+
 ---
 
 ## 6. Tech Stack
