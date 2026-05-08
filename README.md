@@ -168,14 +168,14 @@ Purpose:
 ## 6. Tech Stack
 
 Backend: FastAPI  
-LLM: Groq (LLaMA 3.1)  
-Embeddings: Sentence Transformers (all-MiniLM-L6-v2)  
-Vector Search: FAISS  
-OCR: Tesseract / PaddleOCR  
-Explainability: SHAP  
-Fraud Detection: Machine Learning + rule-based hybrid  
-Frontend: Streamlit  
-Storage: SQLite (separated Knowledge DB + Audit DB)
+- LLM: Groq (LLaMA 3.1)  
+- Embeddings: Sentence Transformers (all-MiniLM-L6-v2)  
+- Vector Search: FAISS  
+- OCR: Tesseract / PaddleOCR  
+- Explainability: SHAP  
+- Fraud Detection: Machine Learning + rule-based hybrid  
+- Frontend: Streamlit  
+- Storage: SQLite (separated Knowledge DB + Audit DB)
 
 ---
 
