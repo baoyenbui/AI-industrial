@@ -1,68 +1,219 @@
-# AI-Powered Health Insurance Claim Approval System
+# AI-Powered Health Insurance Claim Decision System  
+## (RAG + OCR + Knowledge Base + Fraud Detection + Explainability + Audit Logging)
+
+---
 
 ## 1. Project Overview
-This system automates health insurance claim adjudication using a hybrid AI pipeline combining structured validation, OCR extraction, FAISS-based retrieval, and LLM reasoning (Groq LLaMA 3.1).
 
-It supports both manual structured input and invoice image upload, ensuring all claims are validated before AI processing.
+This system automates health insurance claim adjudication using a hybrid AI architecture combining structured validation, OCR extraction, Retrieval-Augmented Generation (RAG), explainable AI techniques, and a secure knowledge + audit system.
 
----
+The system is designed to ensure that all claim decisions are:
 
-## 2. Features
-- AI-assisted claim decision (Approved / Denied / Pending)
-- Retrieval-Augmented Generation (FAISS similar claim search)
-- Strict schema-based validation (no free-text ambiguity)
-- OCR-based invoice extraction (image → structured data)
-- Automatic rejection of incomplete or invalid claims
-- Explainable AI decisions with retrieved evidence
-- Streamlit interactive dashboard
+- grounded in retrieved evidence  
+- explainable at both reasoning and feature level  
+- auditable  
+- resistant to hallucination  
+- robust to fraudulent and anomalous claims  
+
+It also supports reimbursement estimation and fraud risk detection.
 
 ---
 
-## 3. Workflow
-1. User submits claim (form or invoice image)
-2. System validates and normalizes input
-3. OCR extracts fields if image is uploaded
-4. FAISS retrieves similar historical claims
-5. LLM generates decision based only on retrieved evidence
-6. System returns structured output (decision, reason, confidence)
+## 2. Core Features
+
+### AI Decision Engine
+- Claim classification: Approved / Denied / Pending  
+- Reimbursement amount prediction  
+- Confidence scoring  
+- Explanation grounded in retrieved evidence  
+- Feature-level explainability using SHAP  
+
+### RAG-Based Retrieval System
+- FAISS-based similarity search  
+- Retrieval of historical claims  
+- Retrieval of insurance policies and medical rules  
+- Context-aware LLM reasoning  
+
+### OCR Pipeline
+- Invoice image to structured data extraction  
+- Robust parsing with validation layer  
+- Handles noisy real-world documents  
+
+### Knowledge Base System
+- Insurance policies  
+- Pricing rules  
+- Medical guidelines  
+- Fraud detection patterns  
+
+### Fraud Detection Layer
+- ML-based anomaly detection for fraud scoring  
+- Rule-based anomaly detection  
+- Suspicious prescription patterns  
+- Overbilling detection signals  
+- Risk scoring integration into decision process  
+
+### Explainability Layer
+- SHAP-based feature attribution for model decisions  
+- Global + local feature importance analysis  
+- Supports transparency in reimbursement and fraud scoring  
+
+### Audit Logging System
+- Records all system actions  
+- Tracks claim and knowledge updates  
+- Ensures traceability and compliance  
+- Supports debugging and monitoring  
 
 ---
 
-## 4. Tech Stack
+## 3. System Architecture
+
+The system is designed as a multi-layer pipeline:
+
+### Input Layer
+- Structured form input  
+- Invoice image input  
+
+### Processing Layer
+- Input validation  
+- Data normalization  
+- OCR extraction (if image provided)  
+
+### Retrieval Layer (RAG)
+- FAISS similarity search  
+- Retrieval of:
+  - similar claims  
+  - policy rules  
+  - fraud patterns  
+
+### Intelligence Layer
+- LLM reasoning (Groq LLaMA 3.1)  
+- Decision generation based only on retrieved context  
+
+### Explainability Layer
+- SHAP-based feature attribution  
+- Feature-level contribution analysis for:
+  - approval decision  
+  - reimbursement amount  
+  - fraud risk score  
+
+### Fraud Detection Layer
+- ML-based anomaly detection model  
+- Rule-based fraud signals  
+- Integrated risk scoring into decision pipeline  
+
+### Knowledge Layer
+- Versioned knowledge base  
+- Embedding storage for retrieval  
+- Used for reasoning and fraud detection  
+
+### Audit Layer
+- Immutable audit logs  
+- Tracks all actions on claims and knowledge updates  
+
+---
+
+## 4. Workflow
+
+1. User submits claim (form or invoice image)  
+2. System validates and normalizes input  
+3. OCR extracts structured data if image is provided  
+4. RAG retrieves relevant context:
+   - historical claims  
+   - insurance policies  
+   - fraud patterns  
+5. Fraud detection layer evaluates anomaly risk using ML model  
+6. LLM generates decision using retrieved context only  
+7. SHAP explains feature-level impact of decision  
+8. System outputs:
+   - decision  
+   - reimbursement amount  
+   - explanation  
+   - fraud risk score  
+   - SHAP feature attribution  
+9. All actions are recorded in audit database  
+
+---
+
+## 5. Databases
+
+### Knowledge Database
+
+Stores domain intelligence used by the system:
+- insurance policies  
+- pricing rules  
+- fraud patterns  
+- embedding vectors for retrieval  
+
+Purpose:
+- supports RAG reasoning  
+- enables fraud detection  
+- drives reimbursement logic  
+
+---
+
+### Audit Database
+
+Stores all system activity:
+- claim lifecycle changes  
+- knowledge updates  
+- system/user actions  
+
+Purpose:
+- security and compliance  
+- full traceability  
+- debugging and monitoring  
+
+---
+
+## 6. Tech Stack
+
 Backend: FastAPI  
 LLM: Groq (LLaMA 3.1)  
 Embeddings: Sentence Transformers (all-MiniLM-L6-v2)  
 Vector Search: FAISS  
 OCR: Tesseract / PaddleOCR  
+Explainability: SHAP  
+Fraud Detection: Machine Learning + rule-based hybrid  
 Frontend: Streamlit  
+Storage: SQLite (separated Knowledge DB + Audit DB)
 
 ---
 
-## 5. System Architecture
-- Input Layer: Structured form + optional OCR image input  
-- Processing Layer: Validation + normalization + OCR extraction  
-- Retrieval Layer: FAISS similarity search (top-K claims)  
-- Intelligence Layer: LLM reasoning using retrieved cases  
-- Output Layer: Decision + explanation + confidence score  
+## 7. Output Format
+
+Each claim produces a structured response:
+
+```json
+{
+  "status": "APPROVED | DENIED | PENDING",
+  "reimbursement_amount": 0.0,
+  "fraud_risk_score": 0.0,
+  "confidence": 0.0,
+  "shap_explanation": {
+    "top_features": [
+      {"feature": "claim_amount", "impact": 0.42},
+      {"feature": "diagnosis_mismatch", "impact": -0.31}
+    ]
+  },
+  "explanation": "Decision reasoning based on retrieved evidence",
+  "evidence": [
+    "similar_claim_1",
+    "policy_rule_2"
+  ]
+}
+
+## 8. Key Design Principles
+
+- No free-text reasoning without retrieval grounding  
+- Strict schema validation before LLM processing  
+- Separation of knowledge, audit, reasoning, and explainability layers  
+- Hybrid fraud detection (ML + rules)  
+- Feature-level and reasoning-level explainability (SHAP + LLM)  
+- Full traceability of system decisions  
+- Fraud-aware decision pipeline by design  
 
 ---
 
-## 6. Installation & Run
+## 9. Summary
 
-### 6.1 Install Dependencies
-pip install fastapi uvicorn sentence-transformers faiss-cpu pandas numpy streamlit groq pytesseract
-
-### 6.2 Run Backend
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-
-### 6.3 Run Frontend
-streamlit run frontend.py
-
----
-
-## 7. Key Improvements
-- Prevents incomplete claims from reaching LLM
-- Enforces strict structured input pipeline
-- Adds OCR support for real-world usage
-- Improves retrieval quality via FAISS
-- Ensures explainable and auditable AI decisions
+This system is a production-oriented AI decision engine for insurance claim processing. It integrates OCR, RAG, fraud detection, SHAP-based explainability, and audit logging to ensure decisions are grounded, interpretable at multiple levels, and fully traceable in real-world deployment scenarios.
