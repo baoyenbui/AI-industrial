@@ -144,10 +144,7 @@ Stores domain intelligence used by the system:
 - fraud patterns  
 - embedding vectors for retrieval  
 
-Purpose:
-- supports RAG reasoning  
-- enables fraud detection  
-- drives reimbursement logic  
+Purpose: supports RAG reasoning, enables fraud detection and drives reimbursement logic  
 
 ---
 
@@ -158,11 +155,7 @@ Stores all system activity:
 - knowledge updates  
 - system/user actions  
 
-Purpose:
-- security and compliance  
-- full traceability  
-- debugging and monitoring  
-
+Purpose: security and compliance, full traceability, debugging and monitoring  
 ---
 
 ## 6. Tech Stack
@@ -179,31 +172,7 @@ Backend: FastAPI
 
 ---
 
-## 7. Output Format
-
-Each claim produces a structured response:
-
-```json
-{
-  "status": "APPROVED | DENIED | PENDING",
-  "reimbursement_amount": 0.0,
-  "fraud_risk_score": 0.0,
-  "confidence": 0.0,
-  "shap_explanation": {
-    "top_features": [
-      {"feature": "claim_amount", "impact": 0.42},
-      {"feature": "diagnosis_mismatch", "impact": -0.31}
-    ]
-  },
-  "explanation": "Decision reasoning based on retrieved evidence",
-  "evidence": [
-    "similar_claim_1",
-    "policy_rule_2"
-  ]
-}
- ```  
-
-## 8. Key Design Principles
+## 7. Key Design Principles
 
 - No free-text reasoning without retrieval grounding  
 - Strict schema validation before LLM processing  
@@ -215,6 +184,6 @@ Each claim produces a structured response:
 
 ---
 
-## 9. Summary
+## 8. Summary
 
 This system is a production-oriented AI decision engine for insurance claim processing. It integrates OCR, RAG, fraud detection, SHAP-based explainability, and audit logging to ensure decisions are grounded, interpretable at multiple levels, and fully traceable in real-world deployment scenarios.
