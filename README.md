@@ -201,6 +201,7 @@ Each claim produces a structured response:
     "policy_rule_2"
   ]
 }
+ ```  
 
 ## 8. Key Design Principles
 
