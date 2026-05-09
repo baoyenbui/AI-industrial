@@ -18,144 +18,51 @@ The system is designed to ensure that all claim decisions are:
 It also supports reimbursement estimation and fraud risk detection.
 
 ---
-
 ## 2. Core Features
 
-### AI Decision Engine
-- Claim classification: Approved / Denied / Pending  
-- Reimbursement amount prediction  
-- Confidence scoring  
-- Explanation grounded in retrieved evidence  
-- Feature-level explainability using SHAP  
-
-### RAG-Based Retrieval System
-- FAISS-based similarity search  
-- Retrieval of historical claims  
-- Retrieval of insurance policies and medical rules  
-- Context-aware LLM reasoning  
-
-### OCR Pipeline
-- Invoice image to structured data extraction  
-- Robust parsing with validation layer  
-- Handles noisy real-world documents  
-
-### Knowledge Base System
-- Insurance policies  
-- Pricing rules  
-- Medical guidelines  
-- Fraud detection patterns  
-
-### Fraud Detection Layer
-- ML-based anomaly detection for fraud scoring  
-- Rule-based anomaly detection  
-- Suspicious prescription patterns  
-- Overbilling detection signals  
-- Risk scoring integration into decision process  
-
-### Explainability Layer
-- SHAP-based feature attribution for model decisions  
-- Global + local feature importance analysis  
-- Supports transparency in reimbursement and fraud scoring  
-
-### Audit Logging System
-- Records all system actions  
-- Tracks claim and knowledge updates  
-- Ensures traceability and compliance  
-- Supports debugging and monitoring  
+- **AI Decision Engine**: Automatic classification (Approved/Denied/Pending), reimbursement calculation, confidence scoring, and clear explanations.
+- **RAG Retrieval System**: FAISS-powered semantic search to retrieve relevant historical claims, policies, and medical rules for grounded reasoning.
+- **Advanced OCR Pipeline**: Extracts structured data from medical invoices with robust validation and error correction.
+- **Knowledge Base**: Centralized storage of insurance policies, pricing rules, treatment guidelines, and fraud patterns.
+- **Fraud Detection**: Hybrid system combining rule-based checks and machine learning to identify suspicious claims and overbilling.
+- **Explainability**: SHAP-based feature attribution for transparent, interpretable decisions.
+- **Audit Logging**: Complete tracking of all actions for compliance, traceability, and system monitoring.
 
 ---
 
 ## 3. System Architecture
 
-The system follows a multi-layer pipeline architecture:
+The system is built on a modular, multi-layer architecture:
 
-### Input Layer
-- Structured form input  
-- Invoice image input  
-
-### Processing Layer
-- Input validation  
-- Data normalization  
-- OCR extraction (if image provided)  
-
-### Retrieval Layer (RAG)
-- FAISS similarity search  
-- Retrieves:
-  - similar claims  
-  - policy rules  
-  - fraud patterns  
-
-### Intelligence Layer
-- LLM reasoning (Groq LLaMA 3.1)  
-- Decision generation based only on retrieved context  
-
-### Explainability Layer
-- SHAP-based feature attribution  
-- Feature-level contribution analysis for:
-  - approval decision  
-  - reimbursement amount  
-  - fraud risk score  
-
-### Fraud Detection Layer
-- ML-based anomaly detection model  
-- Rule-based fraud signals  
-- Integrated risk scoring into decision pipeline  
-
-### Knowledge Layer
-- Versioned knowledge base  
-- Embedding storage for retrieval  
-- Used for reasoning and fraud detection  
-
-### Audit Layer
-- Immutable audit logs  
-- Tracks all actions on claims and knowledge updates   
+- **Input Layer**: Web form and medical invoice image upload
+- **Processing Layer**: Data validation, normalization, and OCR extraction
+- **Retrieval Layer (RAG)**: FAISS semantic search for relevant context
+- **Intelligence Layer**: Groq LLM (LLaMA 3.1) for evidence-based reasoning
+- **Fraud Detection Layer**: Real-time risk assessment and anomaly detection
+- **Explainability Layer**: SHAP analysis for feature-level insights
+- **Persistence Layer**: Claims database, Knowledge base, and immutable Audit logs
 
 ---
 
 ## 4. Workflow
 
-1. User submits claim (form or invoice image)  
-2. System validates and normalizes input  
-3. OCR extracts structured data if image is provided  
-4. RAG retrieves relevant context:
-   - historical claims  
-   - insurance policies  
-   - fraud patterns  
-5. Fraud detection layer evaluates anomaly risk using ML model  
-6. LLM generates decision using retrieved context only  
-7. SHAP explains feature-level impact of decision  
-8. System outputs:
-   - decision  
-   - reimbursement amount  
-   - explanation  
-   - fraud risk score  
-   - SHAP feature attribution  
-9. All actions are recorded in audit database  
+1. User submits claim through form or uploads invoice images
+2. System validates and normalizes input data
+3. OCR extracts structured information from images (if provided)
+4. RAG retrieves relevant policies, similar claims, and guidelines
+5. Fraud Detection Layer analyzes risk and flags anomalies
+6. LLM generates a reasoned decision based on retrieved evidence
+7. SHAP explains which factors influenced the final decision
+8. System returns decision, reimbursement amount, explanation, and fraud risk score
+9. All actions are securely logged in the audit database
 
 ---
 
 ## 5. Databases
 
-### Knowledge Database
-
-Stores domain intelligence used by the system:
-- insurance policies  
-- pricing rules  
-- fraud patterns  
-- embedding vectors for retrieval  
-
-Purpose: supports RAG reasoning, enables fraud detection and drives reimbursement logic  
-
----
-
-### Audit Database
-
-Stores all system activity:
-- claim lifecycle changes  
-- knowledge updates  
-- system/user actions  
-
-Purpose: security and compliance, full traceability, debugging and monitoring  
+- **Claims Database** (`health_claims.db`): Stores all submitted claims, decisions, reimbursement details, and metadata.
+- **Knowledge Database** (`medical_knowledge.db`): Contains insurance rules, pricing data, medical guidelines, fraud patterns, and embeddings for RAG.
+- **Audit Database**: Immutable logs of every system action, ensuring full traceability and regulatory compliance.
 
 ---
 
