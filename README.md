@@ -173,14 +173,16 @@ Backend: FastAPI
 
 ---
 
-## 7.How to Run
+## 7. How to Run
 
-```bash
+### 7.1 Install Dependencies
+pip install -r requirements.txt
 
-- pip install -r requirements.txt   # install dependencies
-- uvicorn app.main:app --reload    # run backend API
-- streamlit run app/frontend.py    # run UI
-```
+### 7.2 Run Backend (FastAPI)
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+
+### 7.3 Run Frontend (Streamlit)
+streamlit run frontend.py
 
 ---
 
