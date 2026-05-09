@@ -38,7 +38,7 @@ The system is built on a modular, multi-layer architecture:
 - **Processing Layer**: Data validation, normalization, and OCR extraction
 - **Retrieval Layer (RAG)**: FAISS semantic search for relevant context
 - **Intelligence Layer**: Groq LLM (LLaMA 3.1) for evidence-based reasoning
-- **Fraud Detection Layer**: Real-time risk assessment and anomaly detection
+- **Fraud Detection Layer**: LightGBM model + rule-based engine for risk assessment
 - **Explainability Layer**: SHAP analysis for feature-level insights
 - **Persistence Layer**: Claims database, Knowledge base, and immutable Audit logs
 
