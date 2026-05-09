@@ -173,7 +173,15 @@ Backend: FastAPI
 
 ---
 
-## 7. Key Design Principles
+## 7.How to Run
+
+pip install -r requirements.txt   # install dependencies
+uvicorn app.main:app --reload    # run backend API
+streamlit run app/frontend.py    # run UI
+
+---
+
+## 8. Key Design Principles
 
 - No free-text reasoning without retrieval grounding  
 - Strict schema validation before LLM processing  
@@ -185,6 +193,6 @@ Backend: FastAPI
 
 ---
 
-## 8. Summary
+## 9. Summary
 
 This system is a production-oriented AI decision engine for insurance claim processing. It integrates OCR, RAG, fraud detection, SHAP-based explainability, and audit logging to ensure decisions are grounded, interpretable at multiple levels, and fully traceable in real-world deployment scenarios.
