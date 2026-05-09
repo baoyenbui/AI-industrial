@@ -175,9 +175,11 @@ Backend: FastAPI
 
 ## 7.How to Run
 
-pip install -r requirements.txt   # install dependencies
-uvicorn app.main:app --reload    # run backend API
-streamlit run app/frontend.py    # run UI
+```bash
+
+- pip install -r requirements.txt   # install dependencies
+- uvicorn app.main:app --reload    # run backend API
+- streamlit run app/frontend.py    # run UI
 
 ---
 
