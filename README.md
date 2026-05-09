@@ -22,7 +22,7 @@ It also supports reimbursement estimation and fraud risk detection.
 
 - **AI Decision Engine**: Automatic classification (Approved/Denied/Pending), reimbursement calculation, confidence scoring, and clear explanations.
 - **RAG Retrieval System**: FAISS-powered semantic search to retrieve relevant historical claims, policies, and medical rules for grounded reasoning.
-- **Advanced OCR Pipeline**: Extracts structured data from medical invoices with robust validation and error correction.
+- **OCR Pipeline**: Extracts structured data from medical invoices with robust validation and error correction.
 - **Knowledge Base**: Centralized storage of insurance policies, pricing rules, treatment guidelines, and fraud patterns.
 - **Fraud Detection**: Hybrid system combining rule-based checks and machine learning to identify suspicious claims and overbilling.
 - **Explainability**: SHAP-based feature attribution for transparent, interpretable decisions.
