@@ -13,24 +13,17 @@ st.set_page_config(page_title="Health Claim AI", layout="wide")
 
 st.markdown("""
 <style>
-.stApp { background-color: white !important; border: none !important; box-shadow: none !important; }
-div.block-container {
-    background-color: white !important;
-    padding-top: 2rem !important; padding-bottom: 2rem !important;
-    padding-left: 2rem !important; padding-right: 2rem !important;
-    max-width: 1200px;
-}
+.stApp { background-color: white !important; }
+div.block-container { background-color: white !important; padding: 2rem !important; max-width: 1200px; }
 section { background-color: transparent !important; }
 div[data-testid="stFileUploader"],
 div[data-testid="stForm"],
-div[data-testid="stExpander"] {
-    background-color: #E6F0FF !important; border-radius: 12px; padding: 12px;
-}
+div[data-testid="stExpander"] { background-color: #E6F0FF !important; border-radius: 12px; padding: 12px; }
 input:not([type="hidden"]), textarea {
     background-color: white !important; color: black !important;
     border: 1px solid #B0B0B0 !important; border-radius: 8px !important;
 }
-h1, h2, h3, h4, h5, h6, p, span, label { color: black !important; }
+h1,h2,h3,h4,h5,h6,p,span,label { color: black !important; }
 button, .stButton > button {
     background-color: #E6F0FF !important; border: 1px solid #B0B0B0 !important;
     color: black !important; border-radius: 8px;
@@ -41,293 +34,320 @@ div[data-baseweb="select"] > div {
 }
 div[data-baseweb="select"] svg { fill: #666 !important; }
 div[data-baseweb="select"] input {
-    opacity: 0 !important; position: absolute !important;
-    pointer-events: none !important; height: 0 !important; width: 0 !important;
+    opacity:0 !important; position:absolute !important;
+    pointer-events:none !important; height:0 !important; width:0 !important;
 }
 ul[role="listbox"] { background-color: white !important; border: 1px solid #B0B0B0 !important; }
 li[role="option"] { background-color: white !important; color: black !important; }
 li[role="option"]:hover { background-color: #E6F0FF !important; }
-div[data-baseweb="input"] { border: 1px solid #B0B0B0 !important; border-radius: 8px !important; }
-button[data-baseweb="button"] { border: none !important; box-shadow: none !important; }
-div[data-testid="stJsonContainer"] {
-    background: white !important; color: black !important;
-    border: 1px solid #B0B0B0 !important; border-radius: 8px !important;
-}
-pre { background: white !important; color: black !important; }
-div[data-testid="stFormSubmitButton"] {
-    display: flex !important; justify-content: center !important; margin-top: 12px;
-}
+div[data-testid="stFormSubmitButton"] { display:flex !important; justify-content:center !important; margin-top:12px; }
 div[data-testid="stFormSubmitButton"] button {
-    width: 180px !important; border: 2px solid black !important;
-    background: white !important; color: black !important;
-    border-radius: 10px !important; font-weight: 600;
+    width:180px !important; border:2px solid black !important;
+    background:white !important; color:black !important; border-radius:10px !important; font-weight:600;
 }
-div[data-testid="stFormSubmitButton"] button:hover { background-color: #f5f5f5 !important; }
+div[data-testid="stFormSubmitButton"] button:hover { background-color:#f5f5f5 !important; }
 div[data-testid="stButton"] button {
-    width: 180px !important; background: white !important; color: black !important;
-    border: 2px solid black !important; border-radius: 10px !important;
+    width:180px !important; background:white !important; color:black !important;
+    border:2px solid black !important; border-radius:10px !important;
 }
 div[data-testid="stFileUploader"] button {
-    background: white !important; color: black !important;
-    border: 2px solid black !important; border-radius: 10px !important; box-shadow: none !important;
+    background:white !important; color:black !important;
+    border:2px solid black !important; border-radius:10px !important; box-shadow:none !important;
 }
-div[data-testid="stNumberInput"] { border: none !important; background: transparent !important; padding: 0 !important; }
-div[data-testid="stNumberInput"] label { margin-bottom: 4px !important; }
+div[data-testid="stNumberInput"] { border:none !important; background:transparent !important; padding:0 !important; }
 div[data-testid="stNumberInput"] > div > div {
-    background: white !important; border: 1px solid #B0B0B0 !important;
-    border-radius: 8px !important; overflow: hidden !important;
+    background:white !important; border:1px solid #B0B0B0 !important;
+    border-radius:8px !important; overflow:hidden !important;
 }
-div[data-testid="stNumberInput"] input {
-    background: white !important; border: none !important;
-    color: black !important; -webkit-text-fill-color: black !important;
+div[data-testid="stNumberInput"] input { background:white !important; border:none !important; color:black !important; }
+div[data-testid="stNumberInput"] button { background:white !important; border-left:1px solid #B0B0B0 !important; }
+input::placeholder, textarea::placeholder { color:rgba(0,0,0,0.35) !important; }
+
+.fl-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    font-weight: 600;
+    line-height: 1.6;
 }
-div[data-testid="stNumberInput"] button { background: white !important; border-left: 1px solid #B0B0B0 !important; }
-input::placeholder, textarea::placeholder { color: rgba(0,0,0,0.35) !important; }
-.info-icon {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 16px; height: 16px; margin-left: 6px; border-radius: 50%;
-    border: 1px solid black; font-size: 11px; font-weight: 600;
-    color: black; cursor: help; outline: none !important; box-shadow: none !important;
-    position: relative; vertical-align: middle;
+.fl-wrap .fl-text {
+    font-size: 14px;
+    font-weight: 600;
 }
-.info-icon .tooltip-box {
-    display: none; position: absolute; left: 22px; top: -6px; z-index: 9999;
-    background: white; color: #111111; border: 1px solid #CCCCCC;
-    border-radius: 8px; padding: 10px 13px; width: 230px;
-    font-size: 12px; font-weight: 400; line-height: 1.6;
-    box-shadow: 0 4px 18px rgba(0,0,0,0.12); pointer-events: none; white-space: normal;
+.fl-wrap .fl-text.err {
+    color: #CC0000 !important;
 }
-.info-icon:hover .tooltip-box, .info-icon:focus .tooltip-box { display: block; }
-.info-icon:hover, .info-icon:focus, .info-icon:active { outline: none !important; box-shadow: none !important; }
+.fl-wrap .fl-text.ok {
+    color: #111111 !important;
+}
+.tip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: help;
+    flex-shrink: 0;
+    position: relative;
+    border: 1px solid #999;
+    color: #999 !important;
+    text-decoration: none;
+}
+.tip-icon.err {
+    border-color: #CC0000 !important;
+    color: #CC0000 !important;
+}
+.tip-icon .tip-box {
+    display: none;
+    position: absolute;
+    left: 20px;
+    top: -4px;
+    z-index: 9999;
+    background: white;
+    border: 1px solid #CCC;
+    border-radius: 8px;
+    padding: 9px 12px;
+    width: 220px;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.6;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    pointer-events: none;
+    white-space: normal;
+    color: #222 !important;
+}
+.tip-icon:hover .tip-box { display: block; }
+
+.result-panel { border-radius:12px; padding:20px 24px; margin-top:20px; border:1.5px solid #ddd; }
+.result-approved { border-color:#1a7a3e !important; background:#f0faf4 !important; }
+.result-denied   { border-color:#b91c1c !important; background:#fef2f2 !important; }
+.result-pending  { border-color:#b45309 !important; background:#fffbeb !important; }
+.result-title    { font-size:18px; font-weight:700; margin-bottom:12px; }
+.result-approved .result-title { color:#1a7a3e !important; }
+.result-denied   .result-title { color:#b91c1c !important; }
+.result-pending  .result-title { color:#b45309 !important; }
+.result-row  { display:flex; gap:32px; margin-bottom:10px; flex-wrap:wrap; }
+.result-kv   { display:flex; flex-direction:column; }
+.result-kv-label { font-size:11px; color:#666 !important; text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+.result-kv-value { font-size:20px; font-weight:700; color:#111 !important; }
+.result-meta { font-size:12px; color:#555 !important; margin-bottom:10px; }
+.result-explanation { margin-top:12px; font-size:13px; color:#333 !important; line-height:1.7; white-space:pre-wrap; }
+.result-flagged-title { font-size:12px; font-weight:600; color:#b45309 !important; margin:12px 0 4px; }
+.result-flagged-item  { font-size:12px; color:#444 !important; padding:2px 0; }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def clean_text(x):
-    if x is None:
-        return ""
-    x = str(x)
-    x = unicodedata.normalize("NFKC", x)
-    x = re.sub(r"[\u200b-\u200f\ufeff\u00a0]", "", x)
-    x = re.sub(r"[\x00-\x1f\x7f]", "", x)
+    if x is None: return ""
+    x = unicodedata.normalize("NFKC", str(x))
+    x = re.sub(r"[\u200b-\u200f\ufeff\u00a0\x00-\x1f\x7f]", "", x)
     return re.sub(r"\s+", " ", x).strip()
 
-
 def safe_int(x):
-    try:
-        return int(re.search(r"\d+", str(x)).group())
-    except Exception:
-        return 0
-
+    try: return int(re.search(r"\d+", str(x)).group())
+    except: return 0
 
 def safe_float(x):
-    try:
-        return float(str(x).replace(",", "."))
-    except Exception:
-        return 0.0
-
+    try: return float(str(x).replace(",", "."))
+    except: return 0.0
 
 def normalize_gender(x):
-    x = clean_text(x)
-    if not x or x == "Choose the gender":
-        return ""
-    xl = x.lower()
-    if "female" in xl:
-        return "Female"
-    if "male" in xl:
-        return "Male"
-    return "Other"
-
+    xl = clean_text(x).lower()
+    if "female" in xl: return "Female"
+    if "male"   in xl: return "Male"
+    return ""
 
 def _is_blank(v, min_len=2):
-    if v is None:
-        return True
+    if v is None: return True
     return str(v).strip() in ("", "None") or len(str(v).strip()) < min_len
 
-
-def merge_ocr_results(results: list[dict]) -> dict:
-    NUMERIC_SUM   = {"ClaimAmount", "PatientIncome"}
-    NUMERIC_FIRST = {"PatientAge"}
-    merged: dict  = {}
+def merge_ocr_results(results):
+    SUM, FIRST = {"ClaimAmount", "PatientIncome"}, {"PatientAge"}
+    merged = {}
     for data in results:
-        for key, val in data.items():
-            if key in NUMERIC_SUM:
-                merged[key] = merged.get(key, 0.0) + safe_float(val)
-            elif key in NUMERIC_FIRST:
-                if not merged.get(key):
-                    v = safe_int(val)
-                    if v:
-                        merged[key] = v
+        for k, v in data.items():
+            if k in SUM:
+                merged[k] = merged.get(k, 0.0) + safe_float(v)
+            elif k in FIRST:
+                if not merged.get(k):
+                    n = safe_int(v)
+                    if n: merged[k] = n
             else:
-                if not clean_text(merged.get(key, "")) and clean_text(val):
-                    merged[key] = clean_text(val)
+                if not clean_text(merged.get(k, "")) and clean_text(v):
+                    merged[k] = clean_text(v)
     return merged
 
 
-# ---------------------------------------------------------------------------
-# Session state init
-# ---------------------------------------------------------------------------
-
 DEFAULTS = {
-    "patient_age":            0,
-    "patient_gender":         "Choose the gender",
-    "patient_income":         0.0,
-    "patient_employment":     "",
-    "patient_marital":        "",
-    "provider_specialty":     "",
-    "claim_type":             "",
-    "claim_submission_method":"",
-    "diagnosis":              "",
-    "procedure":              "",
-    "claim_status":           "",
-    "claim_amount":           0.0,
-    "policy_number":          "",
-    "date_of_service":        datetime.today().date(),
-    "hospital_name":          "",
-    "pre_auth_status":        "Choose an option",
-    "error_fields":           [],   # list of field labels with errors
-    "_submitted_once":        False, # đã bấm submit ít nhất 1 lần chưa
-    "_api_result":            None,  # kết quả từ API sau submit thành công
-    "_uploaded_images":       [],
+    "patient_age": 0,
+    "patient_gender": "Choose the gender",
+    "patient_income": 0.0,
+    "patient_employment": "",
+    "patient_marital": "",
+    "provider_specialty": "",
+    "claim_type": "",
+    "claim_submission_method": "",
+    "diagnosis": "",
+    "procedure": "",
+    "claim_status": "",
+    "claim_amount": 0.0,
+    "policy_number": "",
+    "date_of_service": datetime.today().date(),
+    "hospital_name": "",
+    "pre_auth_status": "Choose an option",
+    "error_fields": [],
+    "_api_result": None,
+    "_uploaded_images": [],
 }
 for k, v in DEFAULTS.items():
     st.session_state.setdefault(k, v)
 
 
-# ---------------------------------------------------------------------------
-# Field renderer — highlight đỏ nếu đã submit và field có lỗi
-# ---------------------------------------------------------------------------
+def validate():
+    s, e = st.session_state, []
+    if s.patient_age <= 0:                                  e.append("Age")
+    if s.patient_gender in ("Choose the gender", "", None): e.append("Gender")
+    if _is_blank(s.patient_employment):                     e.append("Employment")
+    if s.claim_amount <= 0:                                 e.append("Total Claim Amount (USD)")
+    if _is_blank(s.diagnosis):                              e.append("Diagnosis Code")
+    if _is_blank(s.hospital_name, 3):                       e.append("Hospital / Clinic Name")
+    if s.pre_auth_status in ("Choose an option", "", None): e.append("Pre-Authorization Status")
+    if _is_blank(s.procedure):                              e.append("Procedure Code")
+    if _is_blank(s.claim_submission_method):                e.append("Submission Method")
+    if _is_blank(s.provider_specialty):                     e.append("Provider Specialty")
+    if _is_blank(s.claim_type):                             e.append("Claim Type")
+    if _is_blank(s.patient_marital):                        e.append("Marital Status")
+    return e
 
-def field(label, help_html, widget_fn):
-    error_fields   = st.session_state.get("error_fields", [])
-    submitted_once = st.session_state.get("_submitted_once", False)
 
-    has_error  = submitted_once and (label in error_fields)
-    color      = "#CC0000" if has_error else "inherit"
-    icon_style = f"border-color:{color};color:{color}"
-    star       = "<span style='color:#CC0000'>*</span>" if has_error else ""
-
+def fl(label, tip, hl):
+    is_err     = label in hl
+    text_cls   = "err" if is_err else "ok"
+    icon_cls   = "tip-icon err" if is_err else "tip-icon"
+    star       = "&nbsp;<span style='color:#CC0000;font-weight:700'>*</span>" if is_err else ""
     st.markdown(
-        f"<div style='margin-bottom:4px;font-weight:600;color:{color};line-height:1.6'>"
-        f"{label}{star}"
-        f"<span class='info-icon' style='{icon_style}' tabindex='0'>i"
-        f"<span class='tooltip-box'>{help_html}</span>"
-        f"</span></div>",
+        f"<div class='fl-wrap'>"
+        f"<span class='fl-text {text_cls}'>{label}{star}</span>"
+        f"<span class='{icon_cls}'>?<span class='tip-box'>{tip}</span></span>"
+        f"</div>",
         unsafe_allow_html=True,
     )
-    return widget_fn(label=label, help=None, label_visibility="collapsed")
 
 
-# ---------------------------------------------------------------------------
-# Validate — trả về list label bị lỗi
-# ---------------------------------------------------------------------------
+def render_result(r):
+    decision = r.get("decision", "Pending")
+    reimb    = r.get("reimbursement_amount") or 0.0
+    baseline = r.get("baseline_amount")      or 0.0
+    conf     = r.get("confidence")           or 0.0
+    expl     = r.get("explanation", "")      or r.get("reason", "No details.")
+    flagged  = r.get("flagged_items", [])
+    cls      = {"Approved": "result-approved", "Denied": "result-denied"}.get(decision, "result-pending")
+    meta_parts = list(filter(None, [
+        f"Policy: <b>{r.get('policy_number')}</b>"   if r.get("policy_number")   else "",
+        f"Hospital: <b>{r.get('hospital_name')}</b>" if r.get("hospital_name")   else "",
+        f"Date: <b>{r.get('date_of_service')}</b>"   if r.get("date_of_service") else "",
+        f"Pre-Auth: <b>{r.get('pre_auth')}</b>"      if r.get("pre_auth")        else "",
+    ]))
+    meta         = "  ·  ".join(meta_parts)
+    flagged_html = ""
+    if flagged:
+        rows         = "".join(f"<div class='result-flagged-item'>⚠ {i}</div>" for i in flagged)
+        flagged_html = f"<div class='result-flagged-title'>FLAGGED ITEMS</div>{rows}"
 
-def validate() -> list[str]:
-    s      = st.session_state
-    errors = []
-    if s.patient_age <= 0:
-        errors.append("Age")
-    if s.patient_gender in ("Choose the gender", "", None):
-        errors.append("Gender")
-    if s.patient_income < 0:
-        errors.append("Income (USD/month)")
-    if _is_blank(s.patient_employment):
-        errors.append("Employment")
-    if s.claim_amount <= 0:
-        errors.append("Total Claim Amount (USD)")
-    if _is_blank(s.diagnosis):
-        errors.append("Diagnosis Code")
-    if _is_blank(s.hospital_name, min_len=3):
-        errors.append("Hospital / Clinic Name")
-    if s.pre_auth_status in ("Choose an option", "", None):
-        errors.append("Pre-Authorization Status")
-    return errors
+    st.markdown(f"""
+<div class='result-panel {cls}'>
+    <div class='result-title'>Claim {decision}</div>
+    <div class='result-row'>
+        <div class='result-kv'>
+            <span class='result-kv-label'>Reimbursement</span>
+            <span class='result-kv-value'>${reimb:,.2f}</span>
+        </div>
+        <div class='result-kv'>
+            <span class='result-kv-label'>Baseline</span>
+            <span class='result-kv-value'>${baseline:,.2f}</span>
+        </div>
+        <div class='result-kv'>
+            <span class='result-kv-label'>Confidence</span>
+            <span class='result-kv-value'>{conf:.0%}</span>
+        </div>
+    </div>
+    <div class='result-meta'>{meta}</div>
+    <div class='result-explanation'>{expl}</div>
+    {flagged_html}
+</div>""", unsafe_allow_html=True)
 
-
-# ---------------------------------------------------------------------------
-# Layout
-# ---------------------------------------------------------------------------
 
 st.title("Health Insurance Claim Approval System")
 
+st.markdown("""
+<div style="background:#f8f9fa;padding:16px 20px;border-radius:12px;
+            border-left:5px solid #1e88e5;margin-bottom:28px;">
+    <p style="margin:0;color:#444;font-size:15.2px;line-height:1.65;">
+        Submit your medical claim and get an AI-powered approval decision instantly.<br>
+        Upload your invoice images to auto-fill the form, or enter the details manually.
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
 left, right = st.columns([1, 1.2])
 
-# ── LEFT: upload + OCR ──────────────────────────────────────────────────────
 with left:
     st.markdown("<h3 style='margin-bottom:10px;'>Upload Documents</h3>", unsafe_allow_html=True)
-
-    uploaded_files = st.file_uploader(
-        "Select Images (multiple allowed)",
-        type=["png", "jpg", "jpeg"],
-        accept_multiple_files=True,
-    )
-
+    uploaded_files = st.file_uploader("Select Images", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
     if uploaded_files:
-        st.session_state["_uploaded_images"] = [
-            {"bytes": f.getvalue(), "name": f.name} for f in uploaded_files
-        ]
-    elif not uploaded_files:
+        st.session_state["_uploaded_images"] = [{"bytes": f.getvalue(), "name": f.name} for f in uploaded_files]
+    else:
         st.session_state["_uploaded_images"] = []
 
     images_data = st.session_state.get("_uploaded_images", [])
 
     if images_data:
-        n = len(images_data)
+        n           = len(images_data)
+        thumb_width = 160 if n <= 2 else (120 if n <= 4 else 95)
         st.markdown(
-            f"<div style='text-align:center;font-size:13px;color:#555;margin:12px 0 16px 0;'>"
+            f"<div style='text-align:center;font-size:13px;color:#555;margin:12px 0 16px;'>"
             f"{n} image{'s' if n > 1 else ''} selected</div>",
             unsafe_allow_html=True,
         )
-
-        thumb_width  = 160 if n <= 2 else (120 if n <= 4 else 95)
-        cols_per_row = min(n, 5)
-        thumb_cols   = st.columns(cols_per_row)
+        cols = st.columns(min(n, 5))
         for idx, img_info in enumerate(images_data):
-            with thumb_cols[idx % cols_per_row]:
+            with cols[idx % min(n, 5)]:
                 try:
-                    img        = Image.open(io.BytesIO(img_info["bytes"]))
-                    new_height = int(thumb_width * img.height / img.width)
-                    st.image(img.resize((thumb_width, new_height), Image.LANCZOS),
-                             width=thumb_width, caption=img_info["name"][:14])
-                except Exception:
+                    img = Image.open(io.BytesIO(img_info["bytes"]))
+                    h   = int(thumb_width * img.height / img.width)
+                    st.image(img.resize((thumb_width, h), Image.LANCZOS), width=thumb_width, caption=img_info["name"][:14])
+                except:
                     st.error(f"Cannot load {img_info['name']}")
 
         st.markdown("<div style='margin-bottom:28px;'></div>", unsafe_allow_html=True)
-
-        col_btn = st.columns([1, 2, 1])
-        with col_btn[1]:
+        _, mid, _ = st.columns([1, 2, 1])
+        with mid:
             run_ocr = st.button(f"Run OCR ({n} image{'s' if n > 1 else ''})", use_container_width=True)
 
         if run_ocr:
-            all_extracted: list[dict] = []
-            ocr_errors:   list[str]   = []
-            progress = st.progress(0, text="Running OCR…")
-
+            extracted, errs = [], []
+            bar = st.progress(0, text="Running OCR…")
             for i, img_info in enumerate(images_data):
-                progress.progress(i / n, text=f"Processing {img_info['name']} ({i+1}/{n})…")
+                bar.progress(i / n, text=f"Processing {img_info['name']} ({i+1}/{n})…")
                 try:
-                    res = requests.post(
-                        OCR_API_URL,
-                        files={"file": (img_info["name"], img_info["bytes"])},
-                        timeout=30,
-                    )
-                    if res.status_code == 200:
-                        all_extracted.append(res.json().get("extracted_data", {}))
+                    r = requests.post(OCR_API_URL, files={"file": (img_info["name"], img_info["bytes"])}, timeout=30)
+                    if r.status_code == 200:
+                        extracted.append(r.json().get("extracted_data", {}))
                     else:
-                        ocr_errors.append(f"{img_info['name']}: HTTP {res.status_code}")
-                except Exception as e:
-                    ocr_errors.append(f"{img_info['name']}: {e}")
-
-            progress.progress(1.0, text="Done!")
-            for err in ocr_errors:
+                        errs.append(f"{img_info['name']}: HTTP {r.status_code}")
+                except Exception as ex:
+                    errs.append(f"{img_info['name']}: {ex}")
+            bar.progress(1.0, text="Done!")
+            for err in errs:
                 st.warning(f"OCR error — {err}")
 
-            if all_extracted:
-                m = merge_ocr_results(all_extracted)
+            if extracted:
+                m = merge_ocr_results(extracted)
                 st.session_state.update({
                     "patient_age":             safe_int(m.get("PatientAge")),
                     "patient_gender":          normalize_gender(m.get("PatientGender")) or "Choose the gender",
@@ -344,206 +364,187 @@ with left:
                     "policy_number":           clean_text(m.get("PolicyNumber")),
                     "hospital_name":           clean_text(m.get("HospitalName")),
                 })
-                pre_raw = clean_text(m.get("PreAuthorizationStatus"))
-                if pre_raw in ("Yes", "No"):
-                    st.session_state["pre_auth_status"] = pre_raw
-
+                pre = clean_text(m.get("PreAuthorizationStatus"))
+                if pre in ("Yes", "No"):
+                    st.session_state["pre_auth_status"] = pre
                 date_str = m.get("DateOfService")
                 if date_str:
-                    for fmt in ("%d %B %Y", "%B %d %Y", "%d/%m/%Y", "%m/%d/%Y",
-                                "%Y-%m-%d", "%d-%m-%Y"):
+                    for fmt in ("%d %B %Y", "%B %d %Y", "%d/%m/%Y", "%m/%d/%Y", "%Y-%m-%d", "%d-%m-%Y"):
                         try:
-                            st.session_state["date_of_service"] = datetime.strptime(
-                                str(date_str).strip(), fmt).date()
+                            st.session_state["date_of_service"] = datetime.strptime(str(date_str).strip(), fmt).date()
                             break
-                        except Exception:
+                        except:
                             continue
-
-                # OCR fill xong → reset lỗi cũ (user muốn xem lại form sạch)
-                st.session_state["error_fields"]    = []
-                st.session_state["_submitted_once"] = False
-                st.session_state["_api_result"]     = None
-                st.success("OCR completed — please review and submit.")
+                st.session_state.update({"error_fields": [], "_api_result": None})
                 st.rerun()
     else:
         st.markdown(
-            "<div style='text-align:center;color:#888;font-size:14.5px;"
-            "margin-top:50px;margin-bottom:50px;'><em>No images uploaded yet.</em></div>",
+            "<div style='text-align:center;color:#888;font-size:14.5px;margin:50px 0;'>"
+            "<em>No images uploaded yet.</em></div>",
             unsafe_allow_html=True,
         )
 
-# ── RIGHT: form ─────────────────────────────────────────────────────────────
+
 with right:
     st.markdown("<h3 style='margin-bottom:10px;'>Claim Information</h3>", unsafe_allow_html=True)
 
-    with st.form("claim_form"):
+    error_banner = st.empty()
+    result_slot  = st.empty()
+
+    hl = set(st.session_state.get("error_fields", []))
+
+    if hl:
+        error_banner.markdown(
+            "<div style='background:#fff0f0;border:1.5px solid #CC0000;border-radius:8px;"
+            "padding:10px 14px;margin-bottom:10px;font-size:13px;color:#CC0000 !important;'>"
+            "⚠ Please complete the required fields</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        error_banner.empty()
+
+    with st.form("claim_form", clear_on_submit=False):
         c1, c2 = st.columns(2)
 
         with c1:
-            field("Policy Number / Member ID", "Your policy number or member ID",
-                  lambda label, help, label_visibility: st.text_input(
-                      label, placeholder="e.g. POL123456789",
-                      key="policy_number", help=help, label_visibility=label_visibility))
+            fl("Policy Number / Member ID",
+               "Your insurance policy number or member ID - usually found on your insurance card or welcome letter.",
+               hl)
+            st.text_input("Policy Number / Member ID", placeholder="e.g. POL123456789",
+                          key="policy_number", label_visibility="collapsed")
 
-            field("Hospital / Clinic Name", "Name of hospital or clinic",
-                  lambda label, help, label_visibility: st.text_input(
-                      label, placeholder="e.g. Vinmec Central Park Hospital",
-                      key="hospital_name", help=help, label_visibility=label_visibility))
+            fl("Hospital / Clinic Name",
+               "The name of the hospital, clinic, or medical facility where you received treatment.",
+               hl)
+            st.text_input("Hospital / Clinic Name", placeholder="e.g. Vinmec Central Park",
+                          key="hospital_name", label_visibility="collapsed")
 
-            field("Age", "<b>Patient age</b> (0–120).",
-                  lambda label, help, label_visibility: st.number_input(
-                      label, min_value=0, max_value=120, step=1,
-                      key="patient_age", help=help, label_visibility=label_visibility))
+            fl("Age",
+               "The patient's current age in years. Must be between 1 and 120.",
+               hl)
+            st.number_input("Age", min_value=0, max_value=120, step=1,
+                            key="patient_age", label_visibility="collapsed")
 
-            field("Gender", "<b>Patient gender</b>.",
-                  lambda label, help, label_visibility: st.selectbox(
-                      label, ["Choose the gender", "Male", "Female", "Other"],
-                      key="patient_gender", help=help, label_visibility=label_visibility))
+            fl("Gender",
+               "The patient's gender as recorded in their medical or insurance record.",
+               hl)
+            st.selectbox("Gender", ["Choose the gender", "Male", "Female", "Other"],
+                         key="patient_gender", label_visibility="collapsed")
 
-            field("Income (USD/month)", "<b>Monthly income</b> before tax.",
-                  lambda label, help, label_visibility: st.number_input(
-                      label, min_value=0.0, step=100.0, format="%.0f",
-                      key="patient_income", help=help, label_visibility=label_visibility))
+            fl("Income (USD/month)",
+               "The patient's average monthly income before tax. This helps assess the appropriate coverage tier.",
+               hl)
+            st.number_input("Income (USD/month)", min_value=0.0, step=100.0, format="%.0f",
+                            key="patient_income", label_visibility="collapsed")
 
-            field("Employment", "<b>Employment status</b> (e.g. employed, student, retired).",
-                  lambda label, help, label_visibility: st.text_input(
-                      label, placeholder="e.g. employed",
-                      key="patient_employment", help=help, label_visibility=label_visibility))
+            fl("Employment",
+               "Current employment status - e.g. Employed, Self-employed, Unemployed, Retired, or Student.",
+               hl)
+            st.text_input("Employment", placeholder="e.g. Employed",
+                          key="patient_employment", label_visibility="collapsed")
 
-            field("Provider Specialty", "<b>Doctor's medical specialty</b>.",
-                  lambda label, help, label_visibility: st.text_input(
-                      label, placeholder="e.g. cardiology",
-                      key="provider_specialty", help=help, label_visibility=label_visibility))
+            fl("Provider Specialty",
+               "The medical specialty of the treating doctor - e.g. Cardiology, Orthopedics, Pediatrics.",
+               hl)
+            st.text_input("Provider Specialty", placeholder="e.g. Cardiology",
+                          key="provider_specialty", label_visibility="collapsed")
 
-            field("Claim Type", "<b>Type of claim</b> (medical, dental, vision…).",
-                  lambda label, help, label_visibility: st.text_input(
-                      label, placeholder="e.g. medical",
-                      key="claim_type", help=help, label_visibility=label_visibility))
+            fl("Claim Type",
+               "The category of this claim - e.g. Medical, Dental, Vision, Pharmacy, or Mental Health.",
+               hl)
+            st.text_input("Claim Type", placeholder="e.g. Medical",
+                          key="claim_type", label_visibility="collapsed")
 
         with c2:
-            field("Date of Service", "Date of treatment / service",
-                  lambda label, help, label_visibility: st.date_input(
-                      label, key="date_of_service", help=help, label_visibility=label_visibility))
+            fl("Date of Service",
+               "The date when the medical treatment or service was received. Must match your medical bill.",
+               hl)
+            st.date_input("Date of Service", key="date_of_service", label_visibility="collapsed")
 
-            field("Pre-Authorization Status", "Pre-authorization status",
-                  lambda label, help, label_visibility: st.selectbox(
-                      label, ["Choose an option", "Yes", "No"],
-                      key="pre_auth_status", help=help, label_visibility=label_visibility))
+            fl("Pre-Authorization Status",
+               "Whether your insurer approved this treatment in advance. Select Yes if you received a pre-auth number before the visit.",
+               hl)
+            st.selectbox("Pre-Authorization Status", ["Choose an option", "Yes", "No"],
+                         key="pre_auth_status", label_visibility="collapsed")
 
-            field("Marital Status", "<b>Marital status</b> (single, married, divorced, widowed).",
-                  lambda label, help, label_visibility: st.text_input(
-                      label, placeholder="e.g. single",
-                      key="patient_marital", help=help, label_visibility=label_visibility))
+            fl("Marital Status",
+               "Patient's marital status 0 - e.g. Single, Married, Divorced, or Widowed.",
+               hl)
+            st.text_input("Marital Status", placeholder="e.g. Single",
+                          key="patient_marital", label_visibility="collapsed")
 
-            field("Diagnosis Code", "<b>ICD-10 diagnosis code</b> from doctor.",
-                  lambda label, help, label_visibility: st.text_input(
-                      label, placeholder="e.g. J18.9",
-                      key="diagnosis", help=help, label_visibility=label_visibility))
+            fl("Diagnosis Code",
+               "The ICD-10 code your doctor assigned - a letter followed by numbers, e.g. J18.9 (pneumonia).",
+               hl)
+            st.text_input("Diagnosis Code", placeholder="e.g. J18.9",
+                          key="diagnosis", label_visibility="collapsed")
 
-            field("Procedure Code", "<b>CPT procedure code</b>.",
-                  lambda label, help, label_visibility: st.text_input(
-                      label, placeholder="e.g. 99213",
-                      key="procedure", help=help, label_visibility=label_visibility))
+            fl("Procedure Code",
+               "The CPT code for the treatment performed: a 5-digit number on your bill, e.g. 99213.",
+               hl)
+            st.text_input("Procedure Code", placeholder="e.g. 99213",
+                          key="procedure", label_visibility="collapsed")
 
-            field("Submission Method", "<b>How the claim was submitted</b>.",
-                  lambda label, help, label_visibility: st.text_input(
-                      label, placeholder="e.g. online",
-                      key="claim_submission_method", help=help, label_visibility=label_visibility))
+            fl("Submission Method",
+               "How this claim is being submitted - e.g. Online, Paper, Fax, or via the Hospital directly.",
+               hl)
+            st.text_input("Submission Method", placeholder="e.g. Online",
+                          key="claim_submission_method", label_visibility="collapsed")
 
-            field("Claim Status", "<b>Current status</b> of the claim.",
-                  lambda label, help, label_visibility: st.text_input(
-                      label, placeholder="e.g. pending",
-                      key="claim_status", help=help, label_visibility=label_visibility))
+            fl("Claim Status",
+               "Current status of this claim if known — e.g. Pending, Approved, or Denied.",
+               hl)
+            st.text_input("Claim Status", placeholder="e.g. Pending",
+                          key="claim_status", label_visibility="collapsed")
 
-            field("Total Claim Amount (USD)",
-                  "<b>Total claim amount</b> before insurance adjustments.",
-                  lambda label, help, label_visibility: st.number_input(
-                      label, min_value=0.0, step=100.0, format="%.0f",
-                      key="claim_amount", help=help, label_visibility=label_visibility))
+            fl("Total Claim Amount (USD)",
+               "Total amount billed by the provider before insurance adjustment — found at the bottom of your invoice.",
+               hl)
+            st.number_input("Total Claim Amount (USD)", min_value=0.0, step=100.0, format="%.0f",
+                            key="claim_amount", label_visibility="collapsed")
 
-        c_btn = st.columns([1, 2, 1])
-        with c_btn[1]:
+        _, mid, _ = st.columns([1, 2, 1])
+        with mid:
             submitted = st.form_submit_button("Submit Claim", use_container_width=True)
 
-    # ── Validation + API call — OUTSIDE form, INSIDE right column ───────────
+if submitted or st.session_state.get("_api_result"):
     if submitted:
-        st.session_state["_submitted_once"] = True
-        st.session_state["_api_result"]     = None
         errors = validate()
-        st.session_state["error_fields"] = errors
-
         if errors:
-            # Không rerun — render lại ngay với highlight đỏ
-            # (Streamlit sẽ re-render form ở trên với error_fields đã set)
-            if len(errors) == 1:
-                st.error(f"Please complete: **{errors[0]}**")
-            else:
-                bullet = "\n".join(f"- {e}" for e in errors)
-                st.error(f"Please complete the following fields:\n{bullet}")
-            # st.stop() để không chạy xuống API call
-            st.stop()
+            st.session_state["error_fields"] = errors
+            st.rerun()
+        else:
+            st.session_state["error_fields"] = []
 
-        # Validation passed → call API
-        payload = {
-            "PatientAge":              int(st.session_state.patient_age),
-            "PatientGender":           st.session_state.patient_gender or "Other",
-            "PatientIncome":           float(st.session_state.patient_income),
-            "PatientEmploymentStatus": str(st.session_state.patient_employment).strip() or "unknown",
-            "PatientMaritalStatus":    str(st.session_state.patient_marital).strip()    or "unknown",
-            "ProviderSpecialty":       str(st.session_state.provider_specialty).strip() or "unknown",
-            "ClaimType":               str(st.session_state.claim_type).strip()         or "unknown",
-            "ClaimAmount":             float(st.session_state.claim_amount),
-            "DiagnosisCode":           str(st.session_state.diagnosis).strip()          or "UNKNOWN",
-            "ProcedureCode":           str(st.session_state.procedure).strip()          or "UNKNOWN",
-            "PolicyNumber":            str(st.session_state.policy_number).strip()      or "None",
-            "DateOfService":           str(st.session_state.date_of_service),
-            "HospitalName":            str(st.session_state.hospital_name).strip(),
-            "PreAuthorizationStatus":  str(st.session_state.pre_auth_status).strip(),
-            "ClaimSubmissionMethod":   str(st.session_state.claim_submission_method).strip() or "unknown",
-            "ClaimStatus":             str(st.session_state.claim_status).strip()       or "pending",
-        }
+            payload = {
+                "PatientAge":              int(st.session_state.patient_age),
+                "PatientGender":           st.session_state.patient_gender or "Other",
+                "PatientIncome":           float(st.session_state.patient_income),
+                "PatientEmploymentStatus": str(st.session_state.patient_employment).strip() or "unknown",
+                "PatientMaritalStatus":    str(st.session_state.patient_marital).strip() or "unknown",
+                "ProviderSpecialty":       str(st.session_state.provider_specialty).strip() or "unknown",
+                "ClaimType":               str(st.session_state.claim_type).strip() or "unknown",
+                "ClaimAmount":             float(st.session_state.claim_amount),
+                "DiagnosisCode":           str(st.session_state.diagnosis).strip() or "UNKNOWN",
+                "ProcedureCode":           str(st.session_state.procedure).strip() or "UNKNOWN",
+                "PolicyNumber":            str(st.session_state.policy_number).strip() or "",
+                "DateOfService":           str(st.session_state.date_of_service),
+                "HospitalName":            str(st.session_state.hospital_name).strip(),
+                "PreAuthorizationStatus":  str(st.session_state.pre_auth_status).strip(),
+                "ClaimSubmissionMethod":   str(st.session_state.claim_submission_method).strip() or "unknown",
+                "ClaimStatus":             str(st.session_state.claim_status).strip() or "pending",
+            }
 
-        with st.spinner("Processing claim…"):
-            try:
-                res = requests.post(API_URL, json=payload, timeout=30)
-                if res.status_code != 200:
-                    st.error(f"Server error: HTTP {res.status_code}")
-                    st.stop()
-                st.session_state["_api_result"] = res.json()
-            except Exception as e:
-                st.error(f"Connection error: {e}")
-                st.stop()
+            with st.spinner("Processing claim..."):
+                try:
+                    r = requests.post(API_URL, json=payload, timeout=30)
+                    if r.status_code == 200:
+                        st.session_state["_api_result"] = r.json()
+                    else:
+                        st.error(f"Server error: HTTP {r.status_code}")
+                except Exception as ex:
+                    st.error(f"Connection error: {ex}")
 
-# ── Result display — always rendered if _api_result is set ──────────────────
-result = st.session_state.get("_api_result")
-if result:
-    decision      = result.get("decision", "Pending")
-    reimbursement = result.get("reimbursement_amount")
-    explanation   = result.get("explanation", "")
-    confidence    = result.get("confidence")
-
-    st.markdown("---")
-    if decision == "Approved":
-        st.success(f"**Claim Status: {decision}**")
-    elif decision == "Denied":
-        st.error(f"**Claim Status: {decision}**")
-    else:
-        st.warning(f"**Claim Status: {decision}**")
-
-    col_r1, col_r2 = st.columns(2)
-    with col_r1:
-        amt = reimbursement if reimbursement is not None else 0.0
-        st.metric("Expected Reimbursement", f"${amt:,.2f}")
-    with col_r2:
-        if confidence is not None:
-            st.metric("Confidence", f"{confidence:.0%}")
-
-    if explanation:
-        st.info(explanation)
-    elif result.get("reason"):
-        st.caption(f"Reason: {result.get('reason')}")
-
-    if result.get("flagged_items"):
-        with st.expander("⚠ Flagged Items"):
-            for item in result["flagged_items"]:
-                st.write(f"• {item}")
+    # Hiển thị kết quả full width
+    if st.session_state.get("_api_result"):
+        render_result(st.session_state["_api_result"])
