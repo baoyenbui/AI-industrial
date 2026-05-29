@@ -135,12 +135,65 @@ input::placeholder, textarea::placeholder { color:rgba(0,0,0,0.35) !important; }
 .result-kv-label { font-size:11px; color:#666 !important; text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
 .result-kv-value { font-size:20px; font-weight:700; color:#111 !important; }
 .result-meta { font-size:12px; color:#555 !important; margin-bottom:10px; }
-.result-explanation { margin-top:12px; font-size:13px; color:#333 !important; line-height:1.7; white-space:pre-wrap; }
 .result-flagged-title { font-size:12px; font-weight:600; color:#b45309 !important; margin:12px 0 4px; }
 .result-flagged-item  { font-size:12px; color:#444 !important; padding:2px 0; }
+
+/* ==================== CHỈ SỬA PHẦN NÀY ==================== */
+.result-explanation {
+    margin-top: 18px;
+    padding: 20px;
+    background: #fafafa;
+    border-radius: 10px;
+    border: 1px solid #e5e5e5;
+    font-size: 14.2px;
+    line-height: 1.75;
+    color: #222;
+}
+
+.result-explanation .exp-container { max-width:100%; }
+.result-explanation .exp-header { margin-bottom: 22px; }
+.result-explanation .exp-headline { font-size:18px; font-weight:700; margin-bottom:8px; }
+.result-explanation .exp-sub { color:#555; margin-bottom: 16px; }
+
+.result-explanation .exp-amounts,
+.result-explanation .exp-section { 
+    margin-bottom: 20px; 
+    padding: 18px; 
+    background: white; 
+    border-radius: 10px; 
+    border: 1px solid #eee;
+}
+
+.result-explanation .exp-section-title {
+    font-size: 15.5px; 
+    font-weight: 600; 
+    margin-bottom: 14px; 
+    color: #1a3c5e;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+.result-explanation .exp-amount-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 11px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+.result-explanation .exp-amount-row:last-child { border-bottom: none; }
+.result-explanation .exp-amount-row.covered { color: #1a7a3e; font-weight: 600; }
+.result-explanation .exp-amount-row.owe { color: #b91c1c; font-weight: 600; }
+
+.result-explanation .exp-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12.8px;
+    font-weight: 500;
+}
+.result-explanation .exp-badge.green { background:#d4edda; color:#155724; }
+.result-explanation .exp-badge.orange { background:#fff3cd; color:#856404; }
+/* ========================================================== */
 </style>
 """, unsafe_allow_html=True)
-
 
 def clean_text(x):
     if x is None: return ""
@@ -207,7 +260,6 @@ DEFAULTS = {
 for k, v in DEFAULTS.items():
     st.session_state.setdefault(k, v)
 
-
 def validate():
     s, e = st.session_state, []
     if s.patient_age <= 0:                                  e.append("Age")
@@ -224,7 +276,6 @@ def validate():
     if _is_blank(s.patient_marital):                        e.append("Marital Status")
     return e
 
-
 def fl(label, tip, hl):
     is_err     = label in hl
     text_cls   = "err" if is_err else "ok"
@@ -238,62 +289,112 @@ def fl(label, tip, hl):
         unsafe_allow_html=True,
     )
 
-
 def render_result(r):
     decision = r.get("decision", "Pending")
     reimb    = r.get("reimbursement_amount") or 0.0
     baseline = r.get("baseline_amount")      or 0.0
     conf     = r.get("confidence")           or 0.0
-    expl     = r.get("explanation", "")      or r.get("reason", "No details.")
-    flagged  = r.get("flagged_items", [])
-    cls      = {"Approved": "result-approved", "Denied": "result-denied"}.get(decision, "result-pending")
-    meta_parts = list(filter(None, [
-        f"Policy: <b>{r.get('policy_number')}</b>"   if r.get("policy_number")   else "",
-        f"Hospital: <b>{r.get('hospital_name')}</b>" if r.get("hospital_name")   else "",
-        f"Date: <b>{r.get('date_of_service')}</b>"   if r.get("date_of_service") else "",
-        f"Pre-Auth: <b>{r.get('pre_auth')}</b>"      if r.get("pre_auth")        else "",
-    ]))
-    meta         = "  ·  ".join(meta_parts)
-    flagged_html = ""
-    if flagged:
-        rows         = "".join(f"<div class='result-flagged-item'>⚠ {i}</div>" for i in flagged)
-        flagged_html = f"<div class='result-flagged-title'>FLAGGED ITEMS</div>{rows}"
+    expl     = r.get("explanation", "")
 
-    st.markdown(f"""
-<div class='result-panel {cls}'>
-    <div class='result-title'>Claim {decision}</div>
-    <div class='result-row'>
-        <div class='result-kv'>
-            <span class='result-kv-label'>Reimbursement</span>
-            <span class='result-kv-value'>${reimb:,.2f}</span>
+    cls = {"Approved": "result-approved", "Denied": "result-denied"}.get(decision, "result-pending")
+
+    meta_parts = []
+    if r.get("policy_number"):
+        meta_parts.append(f"Policy: <b>{r.get('policy_number')}</b>")
+    if r.get("hospital_name"):
+        meta_parts.append(f"Hospital: <b>{r.get('hospital_name')}</b>")
+    if r.get("date_of_service"):
+        meta_parts.append(f"Date: <b>{r.get('date_of_service')}</b>")
+    if r.get("pre_auth"):
+        meta_parts.append(f"Pre-Auth: <b>{r.get('pre_auth')}</b>")
+    
+    meta = "  ·  ".join(meta_parts)
+
+    # === FULL RENDERING - Một lần duy nhất ===
+    full_html = f"""
+    <div class='result-panel {cls}'>
+        <div class='result-title'>Claim {decision}</div>
+        
+        <div class='result-row'>
+            <div class='result-kv'>
+                <span class='result-kv-label'>Reimbursement</span>
+                <span class='result-kv-value'>${reimb:,.2f}</span>
+            </div>
+            <div class='result-kv'>
+                <span class='result-kv-label'>Baseline</span>
+                <span class='result-kv-value'>${baseline:,.2f}</span>
+            </div>
+            <div class='result-kv'>
+                <span class='result-kv-label'>Confidence</span>
+                <span class='result-kv-value'>{conf:.0%}</span>
+            </div>
         </div>
-        <div class='result-kv'>
-            <span class='result-kv-label'>Baseline</span>
-            <span class='result-kv-value'>${baseline:,.2f}</span>
-        </div>
-        <div class='result-kv'>
-            <span class='result-kv-label'>Confidence</span>
-            <span class='result-kv-value'>{conf:.0%}</span>
+
+        <div class='result-meta'>{meta}</div>
+        
+        <div class='result-explanation'>
+            {expl}
         </div>
     </div>
-    <div class='result-meta'>{meta}</div>
-    <div class='result-explanation'>{expl}</div>
-    {flagged_html}
-</div>""", unsafe_allow_html=True)
 
+    <style>
+        .result-panel {{ border-radius:12px; padding:24px; margin:20px 0; border:1.5px solid #ddd; }}
+        .result-approved {{ border-color:#1a7a3e; background:#f0faf4; }}
+        .result-denied   {{ border-color:#b91c1c; background:#fef2f2; }}
+        .result-title    {{ font-size:20px; font-weight:700; margin-bottom:16px; }}
+        .result-row      {{ display:flex; gap:32px; margin:16px 0; flex-wrap:wrap; }}
+        .result-kv       {{ display:flex; flex-direction:column; }}
+        .result-kv-label {{ font-size:11px; color:#666; text-transform:uppercase; }}
+        .result-kv-value {{ font-size:21px; font-weight:700; }}
+        .result-meta     {{ font-size:13.5px; color:#444; margin:12px 0 20px; }}
+        
+        .result-explanation {{ 
+            background:#fafafa; 
+            padding:24px; 
+            border-radius:12px; 
+            border:1px solid #e5e5e5; 
+        }}
+        .exp-container {{ max-width:100%; }}
+        .exp-header {{ margin-bottom:24px; }}
+        .exp-headline {{ font-size:18.5px; font-weight:700; margin-bottom:10px; }}
+        .exp-sub {{ color:#555; margin-bottom:20px; }}
+        .exp-amounts, .exp-section {{ 
+            margin-bottom:22px; 
+            padding:20px; 
+            background:white; 
+            border-radius:10px; 
+            border:1px solid #eee;
+        }}
+        .exp-section-title {{
+            font-size:16px; 
+            font-weight:600; 
+            margin-bottom:16px; 
+            color:#1a3c5e;
+            border-bottom:1px solid #eee;
+            padding-bottom:12px;
+        }}
+        .exp-amount-row {{
+            display:flex; 
+            justify-content:space-between; 
+            padding:12px 0; 
+            border-bottom:1px solid #f0f0f0;
+        }}
+        .exp-amount-row:last-child {{ border-bottom:none; }}
+        .exp-amount-row.covered {{ color:#1a7a3e; font-weight:600; }}
+        .exp-amount-row.owe {{ color:#b91c1c; font-weight:600; }}
+        .exp-badge {{
+            padding:5px 13px;
+            border-radius:20px;
+            font-size:13px;
+            font-weight:500;
+        }}
+        .exp-badge.green {{ background:#d4edda; color:#155724; }}
+        .exp-badge.orange {{ background:#fff3cd; color:#856404; }}
+    </style>
+    """
 
-st.title("Health Insurance Claim Approval System")
-
-st.markdown("""
-<div style="background:#f8f9fa;padding:16px 20px;border-radius:12px;
-            border-left:5px solid #1e88e5;margin-bottom:28px;">
-    <p style="margin:0;color:#444;font-size:15.2px;line-height:1.65;">
-        Submit your medical claim and get an AI-powered approval decision instantly.<br>
-        Upload your invoice images to auto-fill the form, or enter the details manually.
-    </p>
-</div>
-""", unsafe_allow_html=True)
-
+    st.components.v1.html(full_html, height=1200, scrolling=True)
+    
 left, right = st.columns([1, 1.2])
 
 with left:
@@ -383,7 +484,6 @@ with left:
             "<em>No images uploaded yet.</em></div>",
             unsafe_allow_html=True,
         )
-
 
 with right:
     st.markdown("<h3 style='margin-bottom:10px;'>Claim Information</h3>", unsafe_allow_html=True)

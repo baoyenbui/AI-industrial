@@ -1,4 +1,3 @@
-# app/services/shap_service.py
 import numpy as np
 import joblib
 from pathlib import Path
@@ -15,7 +14,7 @@ def _load_model():
     if MODEL_PATH.exists():
         try:
             return joblib.load(MODEL_PATH)
-        except:
+        except Exception:
             return None
     return None
 
@@ -26,27 +25,28 @@ def explain_decision(data: dict, fraud_result: dict = None) -> List[Dict]:
         return _fallback_explanation(data)
 
     try:
-        features = build_features(data)[0]
+        features  = build_features(data)[0]
         explainer = _get_explainer(model)
         shap_values = explainer.shap_values(features.reshape(1, -1))
 
         if isinstance(shap_values, list):
-            values = shap_values[1][0]         
+            values = shap_values[1][0]
         else:
             values = shap_values[0]
 
         contributions = []
         for name, value, shap_val in zip(FEATURE_NAMES, features, values):
             contributions.append({
-                "feature": name,
-                "value": round(float(value), 4),
+                "feature":      name,
+                "value":        round(float(value), 4),
                 "contribution": round(float(shap_val), 4),
-                "direction": "increases_risk" if shap_val > 0 else "decreases_risk"
+                "direction":    "increases_risk" if shap_val > 0 else "decreases_risk",
             })
 
         contributions.sort(key=lambda x: abs(x["contribution"]), reverse=True)
-        return contributions[:8]   
-    except:
+        return contributions[:8]
+
+    except Exception:
         return _fallback_explanation(data)
 
 
@@ -59,23 +59,46 @@ def _get_explainer(model):
 
 
 def _fallback_explanation(data: dict) -> List[Dict]:
-    """Giải thích rule-based khi không có model"""
-    amount = float(data.get("claim_amount") or 0)
-    pre_auth = str(data.get("pre_auth", "")).lower() == "yes"
-    ratio = amount / float(data.get("patient_income") or 1)
+    amount   = float(data.get("claim_amount") or 0)
+    pre_auth = str(data.get("pre_auth", "")).strip().lower() == "yes"
+    income   = float(data.get("patient_income") or 1)
+    age      = int(data.get("age") or 0)
+    ratio    = amount / income if income > 0 else 0
 
-    return [
-        {"feature": "claim_amount", "value": amount, "contribution": 0.32 if amount > 20000 else 0.12, "direction": "increases_risk"},
-        {"feature": "pre_auth", "value": pre_auth, "contribution": -0.25 if pre_auth else 0.28, "direction": "decreases_risk" if pre_auth else "increases_risk"},
-        {"feature": "amount_income_ratio", "value": round(ratio, 2), "contribution": 0.22 if ratio > 8 else -0.08, "direction": "increases_risk" if ratio > 8 else "decreases_risk"},
-    ]
+    factors = []
 
+    if pre_auth:
+        factors.append({
+            "feature": "pre_auth", "value": 1,
+            "contribution": -0.30, "direction": "decreases_risk",
+        })
+    else:
+        factors.append({
+            "feature": "pre_auth", "value": 0,
+            "contribution": 0.30, "direction": "increases_risk",
+        })
 
-def format_shap_for_prompt(shap_list: List[Dict]) -> str:
-    if not shap_list:
-        return ""
-    lines = ["DECISION EXPLANATION (Feature Contributions):"]
-    for item in shap_list[:6]:
-        sign = "↑ Risk" if item["direction"] == "increases_risk" else "↓ Risk"
-        lines.append(f"- {item['feature']}: {item['value']} → {sign} ({item['contribution']:+.3f})")
-    return "\n".join(lines)
+    factors.append({
+        "feature": "claim_amount", "value": amount,
+        "contribution": 0.28 if amount > 5000 else 0.08,
+        "direction": "increases_risk" if amount > 5000 else "decreases_risk",
+    })
+
+    if ratio > 8:
+        factors.append({
+            "feature": "amount_income_ratio", "value": round(ratio, 2),
+            "contribution": 0.20, "direction": "increases_risk",
+        })
+    else:
+        factors.append({
+            "feature": "amount_income_ratio", "value": round(ratio, 2),
+            "contribution": -0.10, "direction": "decreases_risk",
+        })
+
+    if age >= 65:
+        factors.append({
+            "feature": "age", "value": age,
+            "contribution": -0.15, "direction": "decreases_risk",
+        })
+
+    return sorted(factors, key=lambda x: abs(x["contribution"]), reverse=True)
