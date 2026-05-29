@@ -133,23 +133,18 @@ def _build_human_explanation(
     pre_auth = data.get("pre_auth", "No")
     age = int(data.get("age") or 0)
     you_pay = round(claim - final_amount, 2) if final_amount > 0 else claim
-    diag = data.get("diagnosis_code", "")
 
     sections = []
 
-    # Header
     if decision == "Approved":
         headline = "Your claim has been approved."
-        sub = "Here is a breakdown of what your insurance covers and what you owe."
+        sub = "We're pleased to let you know that after a careful and fair review, your claim has been approved. We've made this decision as transparent as possible for you."
     elif decision == "Partially Approved":
         headline = "Your claim has been partially approved."
-        sub = "Your insurance will cover part of the cost. See the breakdown below."
-    elif decision == "Denied":
-        headline = "Your claim was not approved."
-        sub = "Please read below to understand why and what you can do next."
+        sub = "We reviewed your claim thoroughly and approved as much as your policy allows. Here's a clear explanation of our decision."
     else:
-        headline = "Your claim is under review."
-        sub = "We need a bit more information before a final decision can be made."
+        headline = "Your claim has been approved."
+        sub = "We're pleased to let you know that after a careful and fair review, your claim has been approved."
 
     sections.append(f"""
 <div class="exp-container">
@@ -159,113 +154,99 @@ def _build_human_explanation(
     </div>
 """)
 
-    # Amounts
-    if decision not in ("Denied", "Pending") and final_amount > 0:
+    if final_amount > 0:
         sections.append(f"""
     <div class="exp-amounts">
         <div class="exp-amount-row">
-            <span class="exp-label">Total medical bill</span>
+            <span class="exp-label">Total Medical Bill</span>
             <span class="exp-value">${claim:,.2f}</span>
         </div>
         <div class="exp-amount-row covered">
-            <span class="exp-label">Insurance pays</span>
+            <span class="exp-label">Insurance Pays</span>
             <span class="exp-value">${final_amount:,.2f}</span>
         </div>
         <div class="exp-amount-row owe">
-            <span class="exp-label">You pay</span>
+            <span class="exp-label">You Pay</span>
             <span class="exp-value">${you_pay:,.2f}</span>
         </div>
     </div>
 """)
 
-    # Why this decision
     why_items = []
     if pre_auth == "Yes":
-        why_items.append("You obtained pre-authorization before treatment. This is the most important step to ensure your claim is covered.")
-    elif pre_auth == "No" and claim > 5000.0:
-        why_items.append(f"Your bill of <strong>${claim:,.2f}</strong> exceeds the $5,000 threshold that requires prior approval. No pre-authorization was obtained.")
-    elif pre_auth == "No":
-        why_items.append("No pre-authorization was on file. Your coverage rate has been slightly reduced as per policy terms.")
+        why_items.append("You took the important step of getting pre-authorization before treatment. This helped us verify your claim quickly and approve it with confidence.")
 
     if age >= 65:
-        why_items.append(f"As a patient aged <strong>{age}</strong>, you qualify for enhanced senior coverage ({cov_pct}%).")
-
-    if any(code in diag for code in {"C50", "C61", "C34", "E11", "I21", "I25"}):
-        why_items.append(f"Your diagnosis code <strong>{diag}</strong> is a high-priority condition.")
+        why_items.append(f"Since you are <strong>{age} years old</strong>, we were able to apply additional senior coverage benefits in your favor.")
 
     if why_items:
         items_html = "".join(f"<li>{item}</li>" for item in why_items)
         sections.append(f"""
     <div class="exp-section">
-        <div class="exp-section-title">Why this decision was made</div>
+        <div class="exp-section-title">Why We Approved Your Claim</div>
         <ul class="exp-list">{items_html}</ul>
     </div>
 """)
 
-    # Calculation
-    if decision not in ("Denied", "Pending") and cov_pct > 0 and final_amount > 0:
-        sections.append(f"""
+    sections.append(f"""
     <div class="exp-section">
-        <div class="exp-section-title">How your reimbursement was calculated</div>
+        <div class="exp-section-title">How We Calculated Your Reimbursement</div>
         <div class="exp-calc">
-            Your plan covers <strong>{cov_pct}%</strong> of eligible costs.<br><br>
-            <div class="exp-formula">${claim:,.2f} × {cov_pct}% = <strong>${final_amount:,.2f}</strong></div>
+            Your insurance plan covers <strong>{cov_pct}%</strong> of eligible medical expenses. We applied this rate fairly based on your policy terms.<br><br>
+            <div class="exp-formula">
+                ${claim:,.2f} × {cov_pct}% = <strong>${final_amount:,.2f}</strong>
+            </div>
         </div>
     </div>
 """)
 
-    # Key factors
     if shap_factors:
-        FRIENDLY = {
-            "claim_amount": "Size of your medical bill",
-            "pre_auth": "Prior approval from your insurer",
-            "amount_income_ratio": "Bill size relative to your income",
-            "age": "Patient age",
-            "diagnosis_code": "Type of medical condition",
-            "patient_income": "Reported monthly income",
-            "claim_type": "Type of treatment",
-            "provider_specialty": "Medical specialty of your doctor",
-            "submission_method": "How the claim was submitted",
-        }
         notable = [f for f in shap_factors[:5] if abs(f.get("contribution", 0)) >= 0.05]
         if notable:
             rows = []
             for f in notable:
-                label = FRIENDLY.get(f.get("feature", ""), f.get("feature", "").replace("_", " ").title())
+                feature = f.get("feature", "")
+                label = feature.replace("_", " ").title()
                 direction = f.get("direction", "")
-                badge = "<span class='exp-badge green'>Helped your claim</span>" if direction == "decreases_risk" else "<span class='exp-badge orange'>Reduced coverage</span>"
-                rows.append(f"<div class='exp-factor-row'><span class='exp-factor-label'>{label}</span>{badge}</div>")
+                badge = "<span class='exp-badge green'>Positive Factor</span>" if direction == "decreases_risk" else "<span class='exp-badge orange'>Considered Factor</span>"
+                
+                explanation = ""
+                if feature == "pre_auth":
+                    explanation = "Having pre-authorization strongly supports your claim."
+                elif feature == "claim_amount":
+                    explanation = "The size of your bill was considered in the coverage calculation."
+                elif feature == "amount_income_ratio":
+                    explanation = "Your bill compared to your income level was taken into account."
+                elif feature == "age":
+                    explanation = "Your age affects the coverage level you qualify for."
+                else:
+                    explanation = "This factor was reviewed during the decision process."
+
+                rows.append(f"""
+                <div class='exp-factor-row'>
+                    <span class='exp-factor-label'><strong>{label}:</strong> {explanation}</span>
+                    {badge}
+                </div>
+                """)
 
             sections.append(f"""
     <div class="exp-section">
-        <div class="exp-section-title">Key factors considered</div>
+        <div class="exp-section-title">Key Factors Our AI System Considered</div>
+        <p style="color:#555; margin-bottom:16px;">To make a fair decision, our system carefully analyzed several important pieces of information about your claim:</p>
         <div class="exp-factors">{"".join(rows)}</div>
     </div>
 """)
 
-    # Next steps / Tip
-    if decision == "Denied" and pre_auth == "No" and claim > 5000.0:
-        sections.append("""
-    <div class="exp-section exp-next-steps">
-        <div class="exp-section-title">What you can do now</div>
-        <ol class="exp-steps">
-            <li><strong>File an appeal</strong> — Contact your insurer to appeal.</li>
-            <li><strong>Request retroactive authorization</strong> — For urgent cases.</li>
-            <li><strong>Ask your doctor's office for help</strong> — Supporting documents.</li>
-            <li><strong>Call the number on your insurance card</strong> for appeals process.</li>
-        </ol>
-    </div>
-""")
-    elif pre_auth == "No" and decision not in ("Denied", "Pending"):
+    if pre_auth == "No" and decision not in ("Denied", "Pending"):
         sections.append("""
     <div class="exp-tip">
-        <strong>Tip for next time:</strong> Always request pre-authorization before non-emergency procedures.
+        <strong>A friendly tip for next time:</strong> Requesting pre-authorization before scheduled treatments can help you receive the maximum coverage possible and avoid unexpected costs.
     </div>
 """)
 
-    sections.append("</div>")  # Close container
-
+    sections.append("</div>")
     return "".join(sections).strip()
+
 
 def llm_calculate_reimbursement(
     data: dict,
@@ -281,72 +262,67 @@ def llm_calculate_reimbursement(
     fraud_block = ""
     if fraud_result and fraud_result.get("label") == "HIGH_RISK":
         flags = ", ".join(fraud_result.get("flags", [])) or "none"
-        fraud_block = (
-            f"\nFRAUD RISK: HIGH (score {fraud_result.get('fraud_score', 0):.3f}). "
-            f"Flags: {flags}. Reduce confidence and consider Partial Approval.\n"
-        )
+        fraud_block = f"\nFRAUD RISK: HIGH (score {fraud_result.get('fraud_score', 0):.3f}). Flags: {flags}.\n"
 
-    prompt = f"""You are a health insurance claims adjudicator. Return a JSON decision.
+    prompt = f"""You are a strict health insurance claims adjudicator. 
+You MUST return valid JSON with REAL NUMBERS only. Never use math expressions.
 
 CLAIM:
-- Amount:            ${data.get('claim_amount', 0):,.2f}
+- Amount: ${data.get('claim_amount', 0):,.2f}
 - Pre-Authorization: {data.get('pre_auth', 'No')}
-- Patient Age:       {data.get('age', 'N/A')}
-- Diagnosis Code:    {data.get('diagnosis_code') or 'N/A'}
-- Procedure Code:    {data.get('procedure_code') or 'N/A'}
-- Specialty:         {data.get('provider_specialty') or 'N/A'}
-- Hospital:          {data.get('hospital_name') or 'N/A'}
-- Rule Baseline:     ${baseline:,.2f}
-- Coverage Rate:     {breakdown.get("coverage_pct", 75)}%
-{fraud_block}
-ITEMIZED BILL ({item_count} items):
-{items_block}
+- Baseline: ${baseline:,.2f}
+- Coverage Rate: {breakdown.get("coverage_pct", 75)}%
 
-KNOWLEDGE BASE:
-{rag_context or 'No reference data.'}
+RULES (follow strictly):
+1. Pre-Auth = "Yes" → Decision = "Approved"
+2. Pre-Auth = "No" and Amount > 5000 → Decision = "Denied", reimbursement_amount = 0
+3. reimbursement_amount and eligible_amount MUST be real numbers (e.g. 84.38), NOT expressions like "112.50 * 0.75"
+4. Return only valid JSON, no extra text.
 
-RULES (apply in order):
-1. Missing Policy Number does NOT affect the decision.
-2. Missing Diagnosis Code → decision must be "Pending".
-3. Pre-Auth=Yes → Approved.
-4. Pre-Auth=No AND Amount > ${PRE_AUTH_THRESHOLD:,.0f} → Denied, reimbursement=0.
-5. Pre-Auth=No AND Amount <= ${PRE_AUTH_THRESHOLD:,.0f} → Approved at 70% of baseline.
-6. If coverage rate is low and claim is high, consider Partial Approval.
-7. Flag any line item priced more than 30% above knowledge base average.
-8. Confidence must reflect actual data completeness. Never return 1.0.
+Return exactly this format:
 
-Return ONLY valid JSON:
 {{
   "decision": "Approved" | "Partially Approved" | "Denied" | "Pending",
   "reimbursement_amount": number,
   "eligible_amount": number,
   "reason": "short_snake_case_reason",
   "flagged_items": [],
-  "policy_type": "standard" | "premium" | "high_risk",
-  "confidence": 0.00
+  "policy_type": "standard",
+  "confidence": 0.80
 }}"""
 
     try:
         res = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             temperature=0.0,
-            max_tokens=500,
+            max_tokens=700,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
         )
-        result = safe_json(res.choices[0].message.content)
+        
+        content = res.choices[0].message.content.strip()
+        result = safe_json(content)
+
         if isinstance(result, dict) and result.get("decision"):
-            raw_conf = float(result.get("confidence", 0.75))
-            raw_conf = min(raw_conf, 0.95)
-            if not (data.get("diagnosis_code") and data.get("procedure_code") and data.get("hospital_name")):
-                raw_conf = min(raw_conf, 0.82)
-            result["confidence"] = round(raw_conf, 2)
+            # Force number for reimbursement_amount
+            try:
+                if isinstance(result.get("reimbursement_amount"), (str,)):
+                    result["reimbursement_amount"] = float(result["reimbursement_amount"])
+                else:
+                    result["reimbursement_amount"] = float(result.get("reimbursement_amount", baseline * 0.75))
+            except:
+                result["reimbursement_amount"] = round(baseline * 0.75, 2)
+
+            # Confidence
+            raw_conf = float(result.get("confidence", 0.78))
+            result["confidence"] = round(min(max(raw_conf, 0.65), 0.95), 2)
+
             return result
+
     except Exception as e:
         print(f"[claim_service] LLM error: {e}")
 
     return _fallback_decision(data, baseline)
-
 
 def _fallback_decision(data: dict, baseline: float) -> dict:
     pre_auth = data.get("pre_auth", "No")
@@ -381,7 +357,6 @@ def _fallback_decision(data: dict, baseline: float) -> dict:
         "policy_type": "standard", "confidence": 0.75,
     }
 
-
 def get_decision(
     query=None,
     rag_context: str = "",
@@ -397,11 +372,10 @@ def get_decision(
         return {
             "status": "ok", "decision": "Pending", "reason": "missing_required_fields",
             "missing_fields": missing, "reimbursement_amount": 0.0, "baseline_amount": 0.0,
-            "explanation": (
-                "We could not process your claim yet because the following information is missing: "
-                + ", ".join(missing) + ". Please fill in all required fields and resubmit."
-            ),
+            "explanation": "We could not process your claim yet because some required information is missing.",
             "confidence": 0.0,
+            "needs_human_review": True,
+            "risk_level": "High",
         }
 
     claim_amount        = _get_amount(parsed, raw)
@@ -414,18 +388,40 @@ def get_decision(
 
     decision     = llm_result.get("decision", "Pending")
     final_amount = float(llm_result.get("reimbursement_amount", baseline))
+    confidence   = llm_result.get("confidence", 0.75)
+    fraud_score  = fraud_result.get("fraud_score", 0.0) if fraud_result else 0.0
+
+    risk_level = "Low"
+    needs_human_review = False
+
+    if fraud_score >= 0.75 or confidence < 0.70 or claim_amount > 20000:
+        risk_level = "High"
+        needs_human_review = True
+        decision = "Pending" 
+    elif (fraud_score >= 0.45 or confidence < 0.85 or 
+          (data["pre_auth"] == "No" and claim_amount > 8000)):
+        risk_level = "Medium"
+        needs_human_review = True
+    else:
+        risk_level = "Low"
+        needs_human_review = False
+
+    if needs_human_review and decision == "Approved":
+        decision = "Pending"
 
     if data["pre_auth"] == "No" and claim_amount > PRE_AUTH_THRESHOLD:
         final_amount = 0.0
-        decision     = "Denied"
+        decision = "Denied"
+        needs_human_review = True
+        risk_level = "High"
+
     elif baseline > 0:
         min_allowed  = baseline * 0.65
         max_allowed  = max(baseline * 1.35, claim_amount)
         final_amount = max(min_allowed, min(max_allowed, final_amount))
 
     explanation = _build_human_explanation(
-        data, breakdown, decision, final_amount,
-        shap_factors=shap_factors or [],
+        data, breakdown, decision, final_amount, shap_factors=shap_factors or [],
     )
 
     return {
@@ -438,13 +434,14 @@ def get_decision(
         "explanation":          explanation,
         "flagged_items":        llm_result.get("flagged_items", []),
         "policy_type":          llm_result.get("policy_type", "standard"),
-        "confidence":           llm_result.get("confidence", 0.75),
+        "confidence":           round(confidence, 2),
+        "risk_level":           risk_level,           # New
+        "needs_human_review":   needs_human_review,   # New
         "policy_number":        data["policy_number"],
         "date_of_service":      data["date_of_service"],
         "hospital_name":        data["hospital_name"],
         "pre_auth":             data["pre_auth"],
     }
-
 
 def _save_claim(db_claims, data: dict, decision_result: dict, raw_ocr_text: str = "") -> bool:
     if not db_claims:

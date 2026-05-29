@@ -310,7 +310,6 @@ def render_result(r):
     
     meta = "  ·  ".join(meta_parts)
 
-    # === FULL RENDERING - Một lần duy nhất ===
     full_html = f"""
     <div class='result-panel {cls}'>
         <div class='result-title'>Claim {decision}</div>
@@ -341,25 +340,26 @@ def render_result(r):
         .result-panel {{ border-radius:12px; padding:24px; margin:20px 0; border:1.5px solid #ddd; }}
         .result-approved {{ border-color:#1a7a3e; background:#f0faf4; }}
         .result-denied   {{ border-color:#b91c1c; background:#fef2f2; }}
-        .result-title    {{ font-size:20px; font-weight:700; margin-bottom:16px; }}
+        .result-title    {{ font-size:20px; font-weight:700; margin-bottom:18px; }}
         .result-row      {{ display:flex; gap:32px; margin:16px 0; flex-wrap:wrap; }}
         .result-kv       {{ display:flex; flex-direction:column; }}
         .result-kv-label {{ font-size:11px; color:#666; text-transform:uppercase; }}
         .result-kv-value {{ font-size:21px; font-weight:700; }}
         .result-meta     {{ font-size:13.5px; color:#444; margin:12px 0 20px; }}
-        
+
         .result-explanation {{ 
             background:#fafafa; 
-            padding:24px; 
+            padding:26px; 
             border-radius:12px; 
             border:1px solid #e5e5e5; 
         }}
         .exp-container {{ max-width:100%; }}
         .exp-header {{ margin-bottom:24px; }}
         .exp-headline {{ font-size:18.5px; font-weight:700; margin-bottom:10px; }}
-        .exp-sub {{ color:#555; margin-bottom:20px; }}
+        .exp-sub {{ color:#555; margin-bottom:22px; }}
+
         .exp-amounts, .exp-section {{ 
-            margin-bottom:22px; 
+            margin-bottom:24px; 
             padding:20px; 
             background:white; 
             border-radius:10px; 
@@ -382,19 +382,36 @@ def render_result(r):
         .exp-amount-row:last-child {{ border-bottom:none; }}
         .exp-amount-row.covered {{ color:#1a7a3e; font-weight:600; }}
         .exp-amount-row.owe {{ color:#b91c1c; font-weight:600; }}
+
+        /* FIX ĐẶC BIỆT CHO PHẦN KEY FACTORS */
+        .exp-factor-row {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }}
+        .exp-factor-row:last-child {{
+            border-bottom: none;
+        }}
+        .exp-factor-label {{
+            flex: 1;
+            padding-right: 12px;
+        }}
         .exp-badge {{
-            padding:5px 13px;
-            border-radius:20px;
-            font-size:13px;
-            font-weight:500;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
         }}
         .exp-badge.green {{ background:#d4edda; color:#155724; }}
         .exp-badge.orange {{ background:#fff3cd; color:#856404; }}
     </style>
     """
 
-    st.components.v1.html(full_html, height=1200, scrolling=True)
-    
+    st.components.v1.html(full_html, height=1150, scrolling=True)
+
 left, right = st.columns([1, 1.2])
 
 with left:
