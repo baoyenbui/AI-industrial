@@ -7,9 +7,16 @@ from dotenv import load_dotenv
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-SYSTEM_PROMPT = """You are a medical billing specialist with 20 years of experience \
-reading hospital invoices, insurance EOBs, and itemized bills from multiple countries. \
-You extract structured line-item data with high precision even from degraded OCR output."""
+SYSTEM_PROMPT = (
+    "You are a medical billing specialist with 20 years of experience "
+    "reading hospital invoices, insurance EOBs, and itemized bills from multiple countries. "
+    "You extract structured line-item data with high precision even from degraded OCR output."
+)
+
+VALID_CATEGORIES = {
+    "Medicine", "Procedure", "Room", "Lab",
+    "Imaging", "Consultation", "Surgery", "Supplies", "Others",
+}
 
 
 def extract_itemized_bill(text: str, diagnosis_code: str = None) -> list[dict]:
@@ -84,7 +91,7 @@ OCR TEXT:
 
     try:
         res = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",  
+            model="llama-3.3-70b-versatile",
             temperature=0.0,
             max_tokens=2000,
             messages=[
@@ -117,10 +124,10 @@ OCR TEXT:
 def _is_valid_item(item: dict) -> bool:
     if not isinstance(item, dict):
         return False
-    desc  = str(item.get("description") or "").strip()
-    total = item.get("total")
+    desc = str(item.get("description") or "").strip()
     if not desc or len(desc) < 3:
         return False
+    total = item.get("total")
     if total is None:
         return False
     try:
@@ -132,23 +139,24 @@ def _is_valid_item(item: dict) -> bool:
 
 
 def _validate_item(item: dict) -> dict:
-    VALID_CATEGORIES = {
-        "Medicine", "Procedure", "Room", "Lab",
-        "Imaging", "Consultation", "Surgery", "Supplies", "Others",
-    }
-
     quantity   = _safe_float(item.get("quantity"))
     unit_price = _safe_float(item.get("unit_price"))
     total      = _safe_float(item.get("total")) or 0.0
 
-    if quantity and unit_price and abs(quantity * unit_price - total) > 0.10:
-        total = round(quantity * unit_price, 2)
+    if quantity and unit_price:
+        computed = round(quantity * unit_price, 2)
+        if abs(computed - total) > 0.10:
+            total = computed
 
     category = item.get("category", "Others")
     if category not in VALID_CATEGORIES:
         category = "Others"
 
-    confidence = max(0.0, min(1.0, _safe_float(item.get("confidence")) or 0.65))
+    confidence = _safe_float(item.get("confidence")) or 0.65
+    confidence = max(0.0, min(1.0, confidence))
+
+    code = item.get("code")
+    code = str(code).strip() if code and str(code).strip() not in ("None", "null", "") else None
 
     return {
         "description": str(item.get("description", "")).strip(),
@@ -156,7 +164,7 @@ def _validate_item(item: dict) -> dict:
         "unit_price":  unit_price,
         "total":       total,
         "category":    category,
-        "code":        str(item.get("code")).strip() if item.get("code") else None,
+        "code":        code,
         "confidence":  round(confidence, 3),
     }
 
@@ -176,6 +184,8 @@ def _safe_float(x) -> float | None:
     try:
         s = str(x).replace(",", "").replace("$", "").strip()
         s = re.sub(r"[^\d\.\-]", "", s)
-        return round(float(s), 2) if s else None
+        if not s:
+            return None
+        return round(float(s), 2)
     except (ValueError, TypeError):
         return None

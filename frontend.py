@@ -545,6 +545,5 @@ if submitted or st.session_state.get("_api_result"):
                 except Exception as ex:
                     st.error(f"Connection error: {ex}")
 
-    # Hiển thị kết quả full width
     if st.session_state.get("_api_result"):
         render_result(st.session_state["_api_result"])
