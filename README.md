@@ -68,7 +68,7 @@ The system is built on a modular, multi-layer architecture:
 
 ## 6. Tech Stack
 
-Backend: FastAPI  
+- Backend: FastAPI  
 - LLM: Groq (LLaMA 3.1)  
 - Embeddings: Sentence Transformers (all-MiniLM-L6-v2)  
 - Vector Search: FAISS  

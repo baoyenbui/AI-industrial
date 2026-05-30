@@ -5,11 +5,15 @@ import io
 import re
 import unicodedata
 from datetime import datetime
+import time
 
-API_URL     = "http://127.0.0.1:8000/predict"
+
+API_URL = "http://127.0.0.1:8000/predict"
 OCR_API_URL = "http://127.0.0.1:8000/ocr-claim"
 
+
 st.set_page_config(page_title="Health Claim AI", layout="wide")
+
 
 st.markdown("""
 <style>
@@ -62,6 +66,7 @@ div[data-testid="stNumberInput"] > div > div {
 div[data-testid="stNumberInput"] input { background:white !important; border:none !important; color:black !important; }
 div[data-testid="stNumberInput"] button { background:white !important; border-left:1px solid #B0B0B0 !important; }
 input::placeholder, textarea::placeholder { color:rgba(0,0,0,0.35) !important; }
+
 
 .fl-wrap {
     display: flex;
@@ -122,78 +127,41 @@ input::placeholder, textarea::placeholder { color:rgba(0,0,0,0.35) !important; }
 }
 .tip-icon:hover .tip-box { display: block; }
 
-.result-panel { border-radius:12px; padding:20px 24px; margin-top:20px; border:1.5px solid #ddd; }
-.result-approved { border-color:#1a7a3e !important; background:#f0faf4 !important; }
-.result-denied   { border-color:#b91c1c !important; background:#fef2f2 !important; }
-.result-pending  { border-color:#b45309 !important; background:#fffbeb !important; }
-.result-title    { font-size:18px; font-weight:700; margin-bottom:12px; }
-.result-approved .result-title { color:#1a7a3e !important; }
-.result-denied   .result-title { color:#b91c1c !important; }
-.result-pending  .result-title { color:#b45309 !important; }
-.result-row  { display:flex; gap:32px; margin-bottom:10px; flex-wrap:wrap; }
-.result-kv   { display:flex; flex-direction:column; }
-.result-kv-label { font-size:11px; color:#666 !important; text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
-.result-kv-value { font-size:20px; font-weight:700; color:#111 !important; }
-.result-meta { font-size:12px; color:#555 !important; margin-bottom:10px; }
-.result-flagged-title { font-size:12px; font-weight:600; color:#b45309 !important; margin:12px 0 4px; }
-.result-flagged-item  { font-size:12px; color:#444 !important; padding:2px 0; }
 
-/* ==================== CHỈ SỬA PHẦN NÀY ==================== */
-.result-explanation {
-    margin-top: 18px;
-    padding: 20px;
-    background: #fafafa;
-    border-radius: 10px;
-    border: 1px solid #e5e5e5;
-    font-size: 14.2px;
-    line-height: 1.75;
-    color: #222;
+.result-panel {
+    border-radius: 12px;
+    padding: 24px;
+    margin: 20px 0;
+    border: 1.5px solid #ddd;
+    background: white;
 }
-
-.result-explanation .exp-container { max-width:100%; }
-.result-explanation .exp-header { margin-bottom: 22px; }
-.result-explanation .exp-headline { font-size:18px; font-weight:700; margin-bottom:8px; }
-.result-explanation .exp-sub { color:#555; margin-bottom: 16px; }
-
-.result-explanation .exp-amounts,
-.result-explanation .exp-section { 
-    margin-bottom: 20px; 
-    padding: 18px; 
-    background: white; 
-    border-radius: 10px; 
-    border: 1px solid #eee;
-}
-
-.result-explanation .exp-section-title {
-    font-size: 15.5px; 
-    font-weight: 600; 
-    margin-bottom: 14px; 
-    color: #1a3c5e;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 10px;
-}
-
-.result-explanation .exp-amount-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 11px 0;
-    border-bottom: 1px solid #f0f0f0;
-}
-.result-explanation .exp-amount-row:last-child { border-bottom: none; }
-.result-explanation .exp-amount-row.covered { color: #1a7a3e; font-weight: 600; }
-.result-explanation .exp-amount-row.owe { color: #b91c1c; font-weight: 600; }
-
-.result-explanation .exp-badge {
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 12.8px;
-    font-weight: 500;
-}
-.result-explanation .exp-badge.green { background:#d4edda; color:#155724; }
-.result-explanation .exp-badge.orange { background:#fff3cd; color:#856404; }
-/* ========================================================== */
 </style>
 """, unsafe_allow_html=True)
+
+
+st.markdown("<h1 style='margin-bottom:10px;'>Health Claim Support System</h1>", unsafe_allow_html=True)
+
+
+st.markdown("""
+<style>
+.subtitle-box {
+    background: #f8f9fa;
+    border-left: 4px solid #667eea;
+    padding: 16px 20px;
+    margin: 0 0 30px 0;
+    border-radius: 8px;
+    font-style: italic;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: #555555;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+</style>
+<div class='subtitle-box'>
+    Intelligent insurance claim processing with AI-powered validation, OCR extraction, and transparent reimbursement calculations
+</div>
+""", unsafe_allow_html=True)
+
 
 def clean_text(x):
     if x is None: return ""
@@ -201,23 +169,27 @@ def clean_text(x):
     x = re.sub(r"[\u200b-\u200f\ufeff\u00a0\x00-\x1f\x7f]", "", x)
     return re.sub(r"\s+", " ", x).strip()
 
+
 def safe_int(x):
     try: return int(re.search(r"\d+", str(x)).group())
     except: return 0
+
 
 def safe_float(x):
     try: return float(str(x).replace(",", "."))
     except: return 0.0
 
+
 def normalize_gender(x):
     xl = clean_text(x).lower()
     if "female" in xl: return "Female"
-    if "male"   in xl: return "Male"
+    if "male" in xl: return "Male"
     return ""
 
-def _is_blank(v, min_len=2):
+
+def _is_blank(v, min_len=1):
     if v is None: return True
-    return str(v).strip() in ("", "None") or len(str(v).strip()) < min_len
+    return str(v).strip() == "" or len(str(v).strip()) < min_len
 
 def merge_ocr_results(results):
     SUM, FIRST = {"ClaimAmount", "PatientIncome"}, {"PatientAge"}
@@ -251,7 +223,7 @@ DEFAULTS = {
     "claim_amount": 0.0,
     "policy_number": "",
     "date_of_service": datetime.today().date(),
-    "hospital_name": "",
+    "provider_name": "",
     "pre_auth_status": "Choose an option",
     "error_fields": [],
     "_api_result": None,
@@ -260,27 +232,30 @@ DEFAULTS = {
 for k, v in DEFAULTS.items():
     st.session_state.setdefault(k, v)
 
+
 def validate():
     s, e = st.session_state, []
-    if s.patient_age <= 0:                                  e.append("Age")
+    if s.patient_age <= 0: e.append("Age")
     if s.patient_gender in ("Choose the gender", "", None): e.append("Gender")
-    if _is_blank(s.patient_employment):                     e.append("Employment")
-    if s.claim_amount <= 0:                                 e.append("Total Claim Amount (USD)")
-    if _is_blank(s.diagnosis):                              e.append("Diagnosis Code")
-    if _is_blank(s.hospital_name, 3):                       e.append("Hospital / Clinic Name")
+    if _is_blank(s.patient_employment): e.append("Employment")
+    if s.claim_amount <= 0: e.append("Total Claim Amount (USD)")
+    if _is_blank(s.diagnosis): e.append("Diagnosis Code")
+    if _is_blank(s.provider_name, 3): e.append("Provider")
     if s.pre_auth_status in ("Choose an option", "", None): e.append("Pre-Authorization Status")
-    if _is_blank(s.procedure):                              e.append("Procedure Code")
-    if _is_blank(s.claim_submission_method):                e.append("Submission Method")
-    if _is_blank(s.provider_specialty):                     e.append("Provider Specialty")
-    if _is_blank(s.claim_type):                             e.append("Claim Type")
-    if _is_blank(s.patient_marital):                        e.append("Marital Status")
+    if _is_blank(s.procedure): e.append("Procedure Code")
+    if _is_blank(s.claim_submission_method): e.append("Submission Method")
+    if _is_blank(s.provider_specialty): e.append("Provider Specialty")
+    if _is_blank(s.claim_type): e.append("Claim Type")
+    if _is_blank(s.patient_marital): e.append("Marital Status")
+    if _is_blank(s.policy_number): e.append("Policy Number / Member ID")
     return e
 
+
 def fl(label, tip, hl):
-    is_err     = label in hl
-    text_cls   = "err" if is_err else "ok"
-    icon_cls   = "tip-icon err" if is_err else "tip-icon"
-    star       = "&nbsp;<span style='color:#CC0000;font-weight:700'>*</span>" if is_err else ""
+    is_err = label in hl
+    text_cls = "err" if is_err else "ok"
+    icon_cls = "tip-icon err" if is_err else "tip-icon"
+    star = "&nbsp;<span style='color:#CC0000;font-weight:700'>*</span>" if is_err else ""
     st.markdown(
         f"<div class='fl-wrap'>"
         f"<span class='fl-text {text_cls}'>{label}{star}</span>"
@@ -289,25 +264,26 @@ def fl(label, tip, hl):
         unsafe_allow_html=True,
     )
 
+
 def render_result(r):
     decision = r.get("decision", "Pending")
-    reimb    = r.get("reimbursement_amount") or 0.0
-    baseline = r.get("baseline_amount")      or 0.0
-    conf     = r.get("confidence")           or 0.0
-    expl     = r.get("explanation", "")
+    reimb = r.get("reimbursement_amount") or 0.0
+    baseline = r.get("baseline_amount") or 0.0
+    conf = r.get("confidence") or 0.0
+    expl = r.get("explanation", "")
 
     cls = {"Approved": "result-approved", "Denied": "result-denied"}.get(decision, "result-pending")
 
     meta_parts = []
     if r.get("policy_number"):
         meta_parts.append(f"Policy: <b>{r.get('policy_number')}</b>")
-    if r.get("hospital_name"):
-        meta_parts.append(f"Hospital: <b>{r.get('hospital_name')}</b>")
+    if r.get("provider_name"):
+        meta_parts.append(f"Provider: <b>{r.get('provider_name')}</b>")
     if r.get("date_of_service"):
         meta_parts.append(f"Date: <b>{r.get('date_of_service')}</b>")
     if r.get("pre_auth"):
         meta_parts.append(f"Pre-Auth: <b>{r.get('pre_auth')}</b>")
-    
+
     meta = "  ·  ".join(meta_parts)
 
     full_html = f"""
@@ -334,13 +310,44 @@ def render_result(r):
         <div class='result-explanation'>
             {expl}
         </div>
+
+        <div class='iais-note'>
+            <span class='info-icon'>i</span>
+            This calculation follows the <a href="https://www.iais.org/">International Association of Insurance Supervisors (IAIS)</a> standard insurance methodologies for transparency and policy clarity.
+        </div>
     </div>
 
     <style>
-        .result-panel {{ border-radius:12px; padding:24px; margin:20px 0; border:1.5px solid #ddd; }}
-        .result-approved {{ border-color:#1a7a3e; background:#f0faf4; }}
-        .result-denied   {{ border-color:#b91c1c; background:#fef2f2; }}
-        .result-title    {{ font-size:20px; font-weight:700; margin-bottom:18px; }}
+        .result-panel {{
+            border-radius: 12px !important; 
+            padding: 24px !important; 
+            margin: 20px 0 !important; 
+            border: 1px solid #ddd !important;
+            background: white;
+        }}
+        
+        .result-approved {{
+            background: #d4edda !important;     
+            border-color: #d4edda !important;
+        }}
+        
+        .result-denied {{
+            background: #fef2f2 !important;
+            border-color: #f87171 !important;
+        }}
+        
+        .result-pending {{
+            background: #fffbeb !important;
+            border-color: #fbbf24 !important;
+        }}
+
+        .result-title {{
+            font-size:25px; 
+            font-weight:700; 
+            margin-bottom:18px;
+        }}
+        .result-approved .result-title {{ color:#166534; }}
+
         .result-row      {{ display:flex; gap:32px; margin:16px 0; flex-wrap:wrap; }}
         .result-kv       {{ display:flex; flex-direction:column; }}
         .result-kv-label {{ font-size:11px; color:#666; text-transform:uppercase; }}
@@ -353,6 +360,40 @@ def render_result(r):
             border-radius:12px; 
             border:1px solid #e5e5e5; 
         }}
+
+        .iais-note {{
+            margin-top: 24px;
+            padding: 10px 14px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 13.2px;
+            color: #555;
+            border-left: 3px solid #555;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+        .iais-note .info-icon {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 19px;
+            height: 19px;
+            border: 2px solid #555;
+            color: #555;
+            font-size: 13px;
+            font-weight: 700;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }}
+        .iais-note a {{
+            color: #1e40af;
+            text-decoration: underline;
+        }}
+        .iais-note a:hover {{
+            color: #1e3a8a;
+        }}
+
         .exp-container {{ max-width:100%; }}
         .exp-header {{ margin-bottom:24px; }}
         .exp-headline {{ font-size:18.5px; font-weight:700; margin-bottom:10px; }}
@@ -379,16 +420,132 @@ def render_result(r):
             padding:12px 0; 
             border-bottom:1px solid #f0f0f0;
         }}
+        
         .exp-amount-row:last-child {{ border-bottom:none; }}
         .exp-amount-row.covered {{ color:#1a7a3e; font-weight:600; }}
         .exp-amount-row.owe {{ color:#b91c1c; font-weight:600; }}
 
-        /* FIX ĐẶC BIỆT CHO PHẦN KEY FACTORS */
+        .exp-calc-table {{
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 100%;
+            margin: 16px 0;
+        }}
+
+        .exp-calc-row {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 15px;
+            line-height: 1.4;
+        }}
+
+        .exp-calc-row:last-child {{
+            border-bottom: none;
+        }}
+
+        .exp-calc-header {{
+            font-weight: 700;
+            font-size: 16px;
+            color: #333;
+            padding-bottom: 14px;
+            border-bottom: 2px solid #ddd;
+            margin-bottom: 4px;
+        }}
+
+        .exp-calc-subtle {{
+            color: #555;
+        }}
+
+        .exp-calc-deduction {{
+            color: #d32f2f;
+        }}
+
+        .exp-calc-divider {{
+            font-weight: 600;
+            color: #333;
+            border-top: 2px solid #ddd;
+            padding-top: 14px;
+            margin-top: 6px;
+        }}
+
+        .exp-calc-total {{
+            font-weight: 700;
+            font-size: 17px;
+            color: #2e7d32;
+            background: #e8f5e9;
+            padding: 14px;
+            border-radius: 6px;
+            margin-top: 10px;
+            border: none;
+        }}
+
+        .exp-calc-label {{
+            flex: 1;
+            padding-right: 12px;
+            color: #444;
+            font-weight: 400;
+        }}
+
+        .exp-calc-value {{
+            font-weight: 700;
+            color: #222;
+            white-space: nowrap;
+            text-align: right;
+            min-width: 100px;
+        }}
+
+        .exp-explanation-box {{
+            background: #fff8e1;
+            border-left: 4px solid #ffc107;
+            padding: 16px;
+            margin-top: 12px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }}
+
+        .exp-explanation-box p {{
+            margin: 8px 0;
+        }}
+
+        .exp-explanation-box p:first-child {{
+            margin-top: 0;
+        }}
+
+        .exp-explanation-box p:last-child {{
+            margin-bottom: 0;
+        }}
+
+        .exp-adjustment-list {{
+            margin: 10px 0;
+            padding-left: 20px;
+        }}
+
+        .exp-adjustment-list li {{
+            margin: 6px 0;
+        }}
+
+        .exp-note {{
+            background: #e3f2fd;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-weight: 500;
+        }}
+
+        .exp-note strong {{
+            color: #1976d2;
+        }}
+
         .exp-factor-row {{
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px 0;
+            padding: 12px 0;
             border-bottom: 1px solid #f0f0f0;
         }}
         .exp-factor-row:last-child {{
@@ -397,22 +554,40 @@ def render_result(r):
         .exp-factor-label {{
             flex: 1;
             padding-right: 12px;
+            line-height: 1.4;
         }}
+        
         .exp-badge {{
             padding: 6px 14px;
             border-radius: 20px;
             font-size: 13px;
-            font-weight: 500;
+            font-weight: 600;
             white-space: nowrap;
         }}
-        .exp-badge.green {{ background:#d4edda; color:#155724; }}
-        .exp-badge.orange {{ background:#fff3cd; color:#856404; }}
+        
+        .exp-badge-favorable {{
+            background: #d4edda;
+            color: #155724;
+        }}
+        
+        .exp-badge-reviewed {{
+            background: #fff3cd;
+            color: #856404;
+        }}
+
+        .exp-knowledge-text {{
+            font-size: 0.95em;
+            color: #555;
+            line-height: 1.6;
+        }}
     </style>
     """
 
     st.components.v1.html(full_html, height=1150, scrolling=True)
 
+
 left, right = st.columns([1, 1.2])
+
 
 with left:
     st.markdown("<h3 style='margin-bottom:10px;'>Upload Documents</h3>", unsafe_allow_html=True)
@@ -425,7 +600,7 @@ with left:
     images_data = st.session_state.get("_uploaded_images", [])
 
     if images_data:
-        n           = len(images_data)
+        n = len(images_data)
         thumb_width = 160 if n <= 2 else (120 if n <= 4 else 95)
         st.markdown(
             f"<div style='text-align:center;font-size:13px;color:#555;margin:12px 0 16px;'>"
@@ -437,15 +612,13 @@ with left:
             with cols[idx % min(n, 5)]:
                 try:
                     img = Image.open(io.BytesIO(img_info["bytes"]))
-                    h   = int(thumb_width * img.height / img.width)
+                    h = int(thumb_width * img.height / img.width)
                     st.image(img.resize((thumb_width, h), Image.LANCZOS), width=thumb_width, caption=img_info["name"][:14])
                 except:
                     st.error(f"Cannot load {img_info['name']}")
 
-        st.markdown("<div style='margin-bottom:28px;'></div>", unsafe_allow_html=True)
-        _, mid, _ = st.columns([1, 2, 1])
-        with mid:
-            run_ocr = st.button(f"Run OCR ({n} image{'s' if n > 1 else ''})", use_container_width=True)
+        st.markdown("<div style='margin-bottom:8px;'></div>", unsafe_allow_html=True)
+        run_ocr = st.button(f"Run OCR ({n} image{'s' if n > 1 else ''})", use_container_width=True)
 
         if run_ocr:
             extracted, errs = [], []
@@ -467,20 +640,20 @@ with left:
             if extracted:
                 m = merge_ocr_results(extracted)
                 st.session_state.update({
-                    "patient_age":             safe_int(m.get("PatientAge")),
-                    "patient_gender":          normalize_gender(m.get("PatientGender")) or "Choose the gender",
-                    "patient_income":          safe_float(m.get("PatientIncome")),
-                    "patient_employment":      clean_text(m.get("PatientEmploymentStatus")),
-                    "patient_marital":         clean_text(m.get("PatientMaritalStatus")),
-                    "provider_specialty":      clean_text(m.get("ProviderSpecialty")),
-                    "claim_type":              clean_text(m.get("ClaimType")),
+                    "patient_age": safe_int(m.get("PatientAge")),
+                    "patient_gender": normalize_gender(m.get("PatientGender")) or "Choose the gender",
+                    "patient_income": safe_float(m.get("PatientIncome")),
+                    "patient_employment": clean_text(m.get("PatientEmploymentStatus")),
+                    "patient_marital": clean_text(m.get("PatientMaritalStatus")),
+                    "provider_specialty": clean_text(m.get("ProviderSpecialty")),
+                    "claim_type": clean_text(m.get("ClaimType")),
                     "claim_submission_method": clean_text(m.get("ClaimSubmissionMethod")),
-                    "diagnosis":               clean_text(m.get("DiagnosisCode")),
-                    "procedure":               clean_text(m.get("ProcedureCode")),
-                    "claim_status":            clean_text(m.get("ClaimStatus")),
-                    "claim_amount":            safe_float(m.get("ClaimAmount")),
-                    "policy_number":           clean_text(m.get("PolicyNumber")),
-                    "hospital_name":           clean_text(m.get("HospitalName")),
+                    "diagnosis": clean_text(m.get("DiagnosisCode")),
+                    "procedure": clean_text(m.get("ProcedureCode")),
+                    "claim_status": clean_text(m.get("ClaimStatus")),
+                    "claim_amount": safe_float(m.get("ClaimAmount")),
+                    "policy_number": clean_text(m.get("PolicyNumber")),
+                    "provider_name": clean_text(m.get("ProviderName")),
                 })
                 pre = clean_text(m.get("PreAuthorizationStatus"))
                 if pre in ("Yes", "No"):
@@ -493,7 +666,9 @@ with left:
                             break
                         except:
                             continue
-                st.session_state.update({"error_fields": [], "_api_result": None})
+                st.session_state["error_fields"] = []
+                st.session_state["_api_result"] = None
+                time.sleep(0.1)
                 st.rerun()
     else:
         st.markdown(
@@ -502,23 +677,19 @@ with left:
             unsafe_allow_html=True,
         )
 
+
 with right:
     st.markdown("<h3 style='margin-bottom:10px;'>Claim Information</h3>", unsafe_allow_html=True)
-
-    error_banner = st.empty()
-    result_slot  = st.empty()
 
     hl = set(st.session_state.get("error_fields", []))
 
     if hl:
-        error_banner.markdown(
+        st.markdown(
             "<div style='background:#fff0f0;border:1.5px solid #CC0000;border-radius:8px;"
-            "padding:10px 14px;margin-bottom:10px;font-size:13px;color:#CC0000 !important;'>"
+            "padding:10px 14px;margin-bottom:14px;font-size:13px;color:#CC0000 !important;'>"
             "⚠ Please complete the required fields</div>",
             unsafe_allow_html=True,
         )
-    else:
-        error_banner.empty()
 
     with st.form("claim_form", clear_on_submit=False):
         c1, c2 = st.columns(2)
@@ -530,11 +701,11 @@ with right:
             st.text_input("Policy Number / Member ID", placeholder="e.g. POL123456789",
                           key="policy_number", label_visibility="collapsed")
 
-            fl("Hospital / Clinic Name",
-               "The name of the hospital, clinic, or medical facility where you received treatment.",
+            fl("Provider",
+               "The entity that provided this bill/document (hospital, clinic, or insurance company).",
                hl)
-            st.text_input("Hospital / Clinic Name", placeholder="e.g. Vinmec Central Park",
-                          key="hospital_name", label_visibility="collapsed")
+            st.text_input("Provider", placeholder="e.g. Vinmec",
+                          key="provider_name", label_visibility="collapsed")
 
             fl("Age",
                "The patient's current age in years. Must be between 1 and 120.",
@@ -585,7 +756,7 @@ with right:
                          key="pre_auth_status", label_visibility="collapsed")
 
             fl("Marital Status",
-               "Patient's marital status 0 - e.g. Single, Married, Divorced, or Widowed.",
+               "Patient's marital status - e.g. Single, Married, Divorced, or Widowed.",
                hl)
             st.text_input("Marital Status", placeholder="e.g. Single",
                           key="patient_marital", label_visibility="collapsed")
@@ -620,36 +791,35 @@ with right:
             st.number_input("Total Claim Amount (USD)", min_value=0.0, step=100.0, format="%.0f",
                             key="claim_amount", label_visibility="collapsed")
 
-        _, mid, _ = st.columns([1, 2, 1])
-        with mid:
-            submitted = st.form_submit_button("Submit Claim", use_container_width=True)
+        submitted = st.form_submit_button("Submit Claim", use_container_width=True)
 
 if submitted or st.session_state.get("_api_result"):
     if submitted:
         errors = validate()
         if errors:
             st.session_state["error_fields"] = errors
+            time.sleep(0.1)
             st.rerun()
         else:
             st.session_state["error_fields"] = []
 
             payload = {
-                "PatientAge":              int(st.session_state.patient_age),
-                "PatientGender":           st.session_state.patient_gender or "Other",
-                "PatientIncome":           float(st.session_state.patient_income),
+                "PatientAge": int(st.session_state.patient_age),
+                "PatientGender": st.session_state.patient_gender or "Other",
+                "PatientIncome": float(st.session_state.patient_income),
                 "PatientEmploymentStatus": str(st.session_state.patient_employment).strip() or "unknown",
-                "PatientMaritalStatus":    str(st.session_state.patient_marital).strip() or "unknown",
-                "ProviderSpecialty":       str(st.session_state.provider_specialty).strip() or "unknown",
-                "ClaimType":               str(st.session_state.claim_type).strip() or "unknown",
-                "ClaimAmount":             float(st.session_state.claim_amount),
-                "DiagnosisCode":           str(st.session_state.diagnosis).strip() or "UNKNOWN",
-                "ProcedureCode":           str(st.session_state.procedure).strip() or "UNKNOWN",
-                "PolicyNumber":            str(st.session_state.policy_number).strip() or "",
-                "DateOfService":           str(st.session_state.date_of_service),
-                "HospitalName":            str(st.session_state.hospital_name).strip(),
-                "PreAuthorizationStatus":  str(st.session_state.pre_auth_status).strip(),
-                "ClaimSubmissionMethod":   str(st.session_state.claim_submission_method).strip() or "unknown",
-                "ClaimStatus":             str(st.session_state.claim_status).strip() or "pending",
+                "PatientMaritalStatus": str(st.session_state.patient_marital).strip() or "unknown",
+                "ProviderSpecialty": str(st.session_state.provider_specialty).strip() or "unknown",
+                "ClaimType": str(st.session_state.claim_type).strip() or "unknown",
+                "ClaimAmount": float(st.session_state.claim_amount),
+                "DiagnosisCode": str(st.session_state.diagnosis).strip() or "UNKNOWN",
+                "ProcedureCode": str(st.session_state.procedure).strip() or "UNKNOWN",
+                "PolicyNumber": str(st.session_state.policy_number).strip() or "",
+                "DateOfService": str(st.session_state.date_of_service),
+                "ProviderName": str(st.session_state.provider_name).strip(),
+                "PreAuthorizationStatus": str(st.session_state.pre_auth_status).strip(),
+                "ClaimSubmissionMethod": str(st.session_state.claim_submission_method).strip() or "unknown",
+                "ClaimStatus": str(st.session_state.claim_status).strip() or "pending",
             }
 
             with st.spinner("Processing claim..."):
@@ -657,10 +827,12 @@ if submitted or st.session_state.get("_api_result"):
                     r = requests.post(API_URL, json=payload, timeout=30)
                     if r.status_code == 200:
                         st.session_state["_api_result"] = r.json()
+                        time.sleep(0.1)
+                        st.rerun()
                     else:
                         st.error(f"Server error: HTTP {r.status_code}")
                 except Exception as ex:
                     st.error(f"Connection error: {ex}")
 
-    if st.session_state.get("_api_result"):
-        render_result(st.session_state["_api_result"])
+if st.session_state.get("_api_result"):
+    render_result(st.session_state["_api_result"])
