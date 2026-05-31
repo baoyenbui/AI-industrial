@@ -16,14 +16,12 @@ def _get_encoder() -> SentenceTransformer:
         _encoder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
     return _encoder
 
-
-def encode(text: str) -> list[float]:
+def encode(text: str) -> list:
     if not text or not text.strip():
         return []
     encoder = _get_encoder()
     vec = encoder.encode(text.strip(), normalize_embeddings=True)
     return vec.tolist()
-
 
 def vector_search(
     db: Session,
@@ -31,12 +29,7 @@ def vector_search(
     diagnosis_code: str = None,
     top_k: int = 5,
     threshold: float = 0.70
-) -> list[dict]:
-    """
-    Vector search dùng numpy cosine similarity — tương thích SQLite.
-    Không dùng pgvector extension.
-    Embedding được lưu trong metadata_json["embedding"].
-    """
+) -> list:
     if not db or not query_text or not query_text.strip():
         return []
 
@@ -49,8 +42,6 @@ def vector_search(
 
         q_arr = np.array(q_vec, dtype="float32")
 
-        # Lấy toàn bộ record chưa bị reject để tính cosine thủ công
-        # MedicalKnowledge không có column review_status → dùng is_appropriate
         base_query = db.query(MedicalKnowledge).filter(
             MedicalKnowledge.is_appropriate != "no"
         )
@@ -64,7 +55,6 @@ def vector_search(
 
         scored = []
         for r in records:
-            # Embedding lưu trong metadata_json["embedding"]
             meta = r.metadata_json or {}
             emb = meta.get("embedding")
 
@@ -73,7 +63,6 @@ def vector_search(
 
             r_arr = np.array(emb, dtype="float32")
 
-            # Cả 2 vec đã normalize khi encode → dot product = cosine similarity
             if r_arr.shape != q_arr.shape:
                 continue
 
@@ -82,25 +71,23 @@ def vector_search(
             if similarity >= threshold:
                 scored.append((r, similarity))
 
-        # Sort descending, lấy top_k
         scored.sort(key=lambda x: x[1], reverse=True)
         scored = scored[:top_k]
 
         return [
             {
-                "id":             str(r.id),
-                "description":    r.description,
-                "category":       r.category,
-                "medical_code":   r.medical_code,
-                # unit_price_avg = midpoint of low/high
+                "id":            str(r.id),
+                "description":   r.description,
+                "category":      r.category,
+                "medical_code":  r.medical_code,
+                "drug_name":     r.drug_name,
+                "disease_name":  r.disease_name,
                 "unit_price_avg": float(((r.unit_price_low or 0) + (r.unit_price_high or 0)) / 2),
                 "unit_price_min": float(r.unit_price_low  or 0),
                 "unit_price_max": float(r.unit_price_high or 0),
                 "typical_total":  float(r.typical_total_low or 0),
-                # sample_count lưu trong metadata_json
                 "sample_count":   (r.metadata_json or {}).get("sample_count", 1),
                 "is_appropriate": r.is_appropriate or "unknown",
-                # MedicalKnowledge không có review_status → dùng is_appropriate làm proxy
                 "review_status":  r.is_appropriate or "unknown",
                 "confidence":     float(r.confidence or 0),
                 "similarity":     round(sim, 4),
@@ -112,10 +99,9 @@ def vector_search(
         print(f"[rag_service] vector_search error: {e}")
         return []
 
-
 def build_rag_context(
-    claim_items: list[dict],
-    similar_knowledge: list[dict]
+    claim_items: list,
+    similar_knowledge: list
 ) -> str:
     if not similar_knowledge:
         return "No similar cases found in knowledge base."
@@ -136,12 +122,17 @@ def build_rag_context(
         if k["unit_price_min"] and k["unit_price_max"]:
             price_range = f" (range ${k['unit_price_min']:,.2f}–${k['unit_price_max']:,.2f})"
 
+        drug_disease_context = ""
+        if k.get("drug_name") and k.get("disease_name"):
+            drug_disease_context = f" | {k['disease_name']} → {k['drug_name']}"
+
         lines.append(
-            f"• [{status_icon}] {k['description']}"
+            f"  [{status_icon}] {k['description']}"
             f" | avg ${k['unit_price_avg']:,.2f}{price_range}"
             f" | seen {k['sample_count']}x"
             f" | similarity {k['similarity']:.0%}"
             + (f" | code {k['medical_code']}" if k.get("medical_code") else "")
+            + drug_disease_context
         )
 
     if claim_items:
@@ -152,11 +143,11 @@ def build_rag_context(
             best  = _find_best_match(desc, similar_knowledge)
 
             if best:
-                avg      = best["unit_price_avg"]
-                qty      = item.get("quantity") or 1
+                avg     = best["unit_price_avg"]
+                qty     = item.get("quantity") or 1
                 expected = avg * qty
                 diff_pct = ((total - expected) / expected * 100) if expected else 0
-                flag     = " ⚠ OVERPRICED" if diff_pct > 30 else ""
+                flag     = " OVERPRICED" if diff_pct > 30 else ""
                 lines.append(
                     f"  - {desc}: billed ${total:,.2f}"
                     f" | expected ~${expected:,.2f}{flag}"
@@ -166,12 +157,11 @@ def build_rag_context(
 
     return "\n".join(lines)
 
-
 def _find_best_match(
     description: str,
-    knowledge_list: list[dict],
+    knowledge_list: list,
     min_similarity: float = 0.75
-) -> Optional[dict]:
+):
     if not description or not knowledge_list:
         return None
 
@@ -186,12 +176,11 @@ def _find_best_match(
 
     return best_record
 
-
 def rerank_by_diagnosis(
-    results: list[dict],
+    results: list,
     diagnosis_code: str,
     boost: float = 0.05
-) -> list[dict]:
+) -> list:
     if not diagnosis_code:
         return results
 
@@ -201,15 +190,11 @@ def rerank_by_diagnosis(
 
     return sorted(results, key=lambda x: x["similarity"], reverse=True)
 
-
 def embed_and_store(
     db: Session,
     knowledge_id: str,
     description: str
 ) -> bool:
-    """
-    Lưu embedding vào metadata_json["embedding"] — không dùng column riêng.
-    """
     if not db or not knowledge_id or not description:
         return False
 
@@ -237,11 +222,7 @@ def embed_and_store(
         db.rollback()
         return False
 
-
 def batch_embed_missing(db: Session, batch_size: int = 100) -> int:
-    """
-    Backfill embedding cho các record thiếu — đọc/ghi qua metadata_json["embedding"].
-    """
     if not db:
         return 0
 
@@ -250,7 +231,6 @@ def batch_embed_missing(db: Session, batch_size: int = 100) -> int:
 
         all_records = db.query(MedicalKnowledge).all()
 
-        # Lọc record chưa có embedding trong metadata_json
         missing = [
             r for r in all_records
             if not (r.metadata_json or {}).get("embedding")

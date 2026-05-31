@@ -3,7 +3,7 @@ import json
 from groq import Groq
 import os
 from dotenv import load_dotenv
-
+import sqlite3
 from ..utils import safe_float, safe_int, safe_json, parse_query, detect_missing
 from .extraction_service import extract_claim_data
 from .ocr_itemized import extract_itemized_bill
@@ -11,14 +11,10 @@ from .rag_service import vector_search, build_rag_context
 from .knowledge_service import upsert_knowledge_item
 from .fraud_service import predict_fraud
 from .shap_service import explain_decision
-
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-
 HIGH_RISK_CODES = {"C50", "C61", "C34", "E11", "I21", "I25"}
 PRE_AUTH_THRESHOLD = 5000.0
-
-
 def _resolve_pre_auth(parsed: dict) -> str:
     keys = ["preauthorizationstatus", "preauthstatus", "preauthorization", "preauth", "pre_auth"]
     for k in keys:
@@ -30,8 +26,6 @@ def _resolve_pre_auth(parsed: dict) -> str:
             if s in ("no", "false", "0", "denied", "not required"):
                 return "No"
     return "No"
-
-
 def _get_amount(parsed: dict, raw: dict) -> float:
     candidates = [
         parsed.get("amount"), parsed.get("claimamount"),
@@ -45,8 +39,6 @@ def _get_amount(parsed: dict, raw: dict) -> float:
         if result is not None and result > 0:
             return result
     return 0.0
-
-
 def _get_pre_auth_raw(raw: dict) -> str:
     keys = [
         "pre_authorization_status", "PreAuthorizationStatus",
@@ -62,8 +54,6 @@ def _get_pre_auth_raw(raw: dict) -> str:
             if s in ("no", "false", "0", "denied", "not required"):
                 return "No"
     return ""
-
-
 def _build_data(parsed: dict, claim_amount: float, raw: dict = None) -> dict:
     raw = raw or {}
     pre_auth = _resolve_pre_auth(parsed)
@@ -71,7 +61,6 @@ def _build_data(parsed: dict, claim_amount: float, raw: dict = None) -> dict:
         raw_pre = _get_pre_auth_raw(raw)
         if raw_pre:
             pre_auth = raw_pre
-
     return {
         "claim_amount": claim_amount,
         "age": safe_int(parsed.get("patientage") or parsed.get("age") or 0),
@@ -88,47 +77,122 @@ def _build_data(parsed: dict, claim_amount: float, raw: dict = None) -> dict:
         "hospital_name": str(parsed.get("hospitalname") or raw.get("hospital_name") or raw.get("HospitalName") or ""),
         "pre_auth": pre_auth,
         "submission_method": str(parsed.get("claimsubmissionmethod") or parsed.get("submissionmethod") or raw.get("claim_submission_method") or raw.get("ClaimSubmissionMethod") or ""),
+        "insurance_company": str(raw.get("insurance_company") or raw.get("InsuranceCompany") or ""),
     }
-
-
-def calculate_baseline_reimbursement(claim_amount: float, data: dict) -> tuple[float, dict]:
+def get_company_rules(company_name: str) -> dict:
+    if not company_name:
+        return {
+            "company_id": "DEFAULT",
+            "company_name": "Default Insurance",
+            "default_reimbursement_percent": 0.80,
+            "rules": {}
+        }
+    try:
+        from ..core.database_user import DB_PATH
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT company_id, company_name, coverage_rules, default_reimbursement_percent FROM insurance_companies WHERE company_name = ?",
+            (company_name,)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        if result:
+            return {
+                "company_id": result[0],
+                "company_name": result[1],
+                "coverage_rules": json.loads(result[2]) if result[2] else {},
+                "default_reimbursement_percent": result[3] or 0.80
+            }
+        else:
+            return {
+                "company_id": "DEFAULT",
+                "company_name": "Default Insurance",
+                "default_reimbursement_percent": 0.80,
+                "rules": {}
+            }
+    except Exception as e:
+        print(f"[claim_service] Error loading company rules: {e}")
+        return {
+            "company_id": "DEFAULT",
+            "company_name": "Default Insurance",
+            "default_reimbursement_percent": 0.80,
+            "rules": {}
+        }
+def calculate_dynamic_reimbursement(claim_amount: float, data: dict) -> tuple:
     if claim_amount <= 0:
-        return 0.0, {"claim_amount": 0, "eligible": 0, "deductible": 0,
-                     "after_deduct": 0, "coverage_pct": 80, "copay": 0,
-                     "baseline": 0.0, "deductible_not_met": False}
-
+        return 0.0, {
+            "claim_amount": 0, 
+            "eligible": 0, 
+            "deductible": 0,
+            "after_deduct": 0, 
+            "coverage_pct": 80, 
+            "copay": 0,
+            "baseline": 0.0, 
+            "deductible_not_met": False,
+            "reimbursement_percent": 0,
+            "rule_applied": "none"
+        }, "DEFAULT"
+    company_name = data.get("insurance_company", "")
+    company_rules = get_company_rules(company_name)
+    default_percent = company_rules["default_reimbursement_percent"]
+    rules = company_rules["coverage_rules"]
+    claim_type = data.get("claim_type", "")
+    pre_auth = data.get("pre_auth", "No")
+    age = data.get("age", 0)
+    diagnosis = data.get("diagnosis_code", "")
+    applied_percent = default_percent
+    rule_applied = "default"
+    max_amount = None
+    for rule_id, rule in rules.items():
+        condition = rule.get("condition", "")
+        try:
+            condition_check = True
+            if "claim_type" in condition:
+                expected_type = condition.split("claim_type ==")[1].strip().replace("'", "").replace('"', '')
+                condition_check = condition_check and (claim_type == expected_type.lower())
+            if "pre_auth" in condition:
+                expected_auth = condition.split("pre_auth ==")[1].strip().replace("'", "").replace('"', '')
+                condition_check = condition_check and (pre_auth == expected_auth)
+            if "age >=" in condition:
+                min_age = int(condition.split("age >=")[1].split()[0])
+                condition_check = condition_check and (age >= min_age)
+            if any(code in diagnosis for code in HIGH_RISK_CODES) and "high_risk" in condition:
+                condition_check = condition_check and True
+            if condition_check:
+                applied_percent = rule.get("reimbursement_percent", default_percent)
+                rule_applied = rule_id
+                max_amount = rule.get("max_amount")
+                break
+        except Exception as e:
+            print(f"[claim_service] Rule evaluation error for {rule_id}: {e}")
+            continue
     eligible = claim_amount
     deductible = 50.0
-    coverage_pct = 0.80
-    copay = 20.0
-
-    if data.get("age", 0) >= 65:
+    if age >= 65:
         deductible = 30.0
-        coverage_pct = 0.90
-        copay = 10.0
-
-    diagnosis = data.get("diagnosis_code", "")
-    if any(code in diagnosis for code in HIGH_RISK_CODES):
+    elif any(code in diagnosis for code in HIGH_RISK_CODES):
         deductible = 80.0
-        coverage_pct = 0.70
-        copay = 30.0
-
     after_deduct = max(0.0, eligible - deductible)
-    reimbursement = max(0.0, round(after_deduct * coverage_pct - copay, 2))
-
+    reimbursement = max(0.0, round(after_deduct * applied_percent, 2))
+    if max_amount and reimbursement > max_amount:
+        reimbursement = max_amount
     breakdown = {
         "claim_amount": claim_amount,
         "eligible": eligible,
         "deductible": deductible,
         "after_deduct": after_deduct,
-        "coverage_pct": int(coverage_pct * 100),
-        "copay": copay,
+        "coverage_pct": int(applied_percent * 100),
+        "copay": 0,
         "baseline": reimbursement,
         "deductible_not_met": after_deduct == 0,
+        "reimbursement_percent": applied_percent,
+        "rule_applied": rule_applied,
+        "max_amount": max_amount,
+        "company_id": company_rules["company_id"],
+        "company_name": company_rules["company_name"],
     }
-    return reimbursement, breakdown
-
-
+    return reimbursement, breakdown, rule_applied
 def _build_human_explanation(
     data: dict,
     breakdown: dict,
@@ -142,12 +206,13 @@ def _build_human_explanation(
     deductible = float(breakdown.get("deductible", 50))
     after_deduct = float(breakdown.get("after_deduct", 0))
     cov_pct = int(breakdown.get("coverage_pct", 80))
-    copay = float(breakdown.get("copay", 20))
+    copay = float(breakdown.get("copay", 0))
     pre_auth = data.get("pre_auth", "No")
     age = int(data.get("age") or 0)
     you_pay = round(claim - final_amount, 2) if final_amount > 0 else claim
+    company_name = breakdown.get("company_name", "Default Insurance")
+    rule_applied = breakdown.get("rule_applied", "default")
     sections = []
-
     if decision == "Approved":
         headline = "Your claim has been approved."
         sub = "We reviewed your claim and confirmed that your treatment is covered under your insurance policy."
@@ -160,13 +225,11 @@ def _build_human_explanation(
     else:
         headline = "Your claim is under review."
         sub = "We need more information to complete your claim."
-
     sections.append(f'''<div class="exp-container">
   <div class="exp-header">
     <div class="exp-headline">{headline}</div>
     <div class="exp-sub">{sub}</div>
   </div>''')
-
     if final_amount > 0:
         sections.append(f'''
   <div class="exp-amounts">
@@ -183,7 +246,6 @@ def _build_human_explanation(
       <span class="exp-value">${you_pay:,.2f}</span>
     </div>
   </div>''')
-
     covered_amt = round(after_deduct * cov_pct / 100, 2)
     sections.append(f'''
     <div class="exp-section">
@@ -206,7 +268,7 @@ def _build_human_explanation(
           <span class="exp-calc-value">${after_deduct:,.2f}</span>
         </div>
         <div class="exp-calc-row exp-calc-subtle">
-          <span class="exp-calc-label">Your insurance covers {cov_pct}% of this</span>
+          <span class="exp-calc-label">Your insurance ({company_name}) covers {cov_pct}% of this</span>
           <span class="exp-calc-value">${covered_amt:,.2f}</span>
         </div>
         <div class="exp-calc-row exp-calc-deduction">
@@ -214,30 +276,27 @@ def _build_human_explanation(
           <span class="exp-calc-value">- ${copay:,.2f}</span>
         </div>
         <div class="exp-calc-row exp-calc-total">
-          <span class="exp-calc-label">Final amount insurance will pay you</span>
+          <span class="exp-calc-label">Final amount insurance will pay you (Rule: {rule_applied})</span>
           <span class="exp-calc-value">${final_amount:,.2f}</span>
         </div>
       </div>
     </div>
     ''')
-
     if knowledge_reference:
         sections.append(f'''
     <div class="exp-section">
-      <div class="exp-section-title">Why You Got ${final_amount:,.2f} Instead of ${float(breakdown.get("baseline", 0)):,.2f}</div>
+      <div class="exp-section-title">Why You Got ${final_amount:,.2f} Instead of Rule-Based Amount</div>
       <div class="exp-explanation-box">
-        <p><strong>Baseline (${float(breakdown.get("baseline", 0)):,.2f}):</strong> This is what a basic formula would give you using fixed rules (like deductible = $50, coverage = 80%). It's a simple starting point.</p>
-        <p><strong>Actual Reimbursement (${final_amount:,.2f}):</strong> This is what you actually get. We adjusted it higher because:</p>
+        <p><strong>Rule-Based Amount:</strong> This is calculated from {company_name}'s policy rules (coverage = {cov_pct}%).</p>
+        <p><strong>Actual Reimbursement (${final_amount:,.2f}):</strong> This is what you actually get. We adjusted it based on:</p>
         <ul class="exp-adjustment-list">
-          <li>Similar claims in our database were approved at this higher amount</li>
+          <li>Similar claims in our database were approved at this amount</li>
           <li>Your treatment was medically necessary and appropriate</li>
           <li>You had pre-authorization, which confirms coverage</li>
         </ul>
-        <p class="exp-note">Bottom line: You got <strong>${round(final_amount - float(breakdown.get("baseline", 0)), 2):,.2f} more</strong> than the basic formula would give you.</p>
       </div>
     </div>
     ''')
-
     why_items = []
     if pre_auth == "Yes":
         why_items.append("You got pre-authorization before treatment. This means your insurer already agreed to cover this procedure.")
@@ -248,7 +307,7 @@ def _build_human_explanation(
     diagnosis = data.get("diagnosis_code", "")
     if any(code in diagnosis for code in HIGH_RISK_CODES):
         why_items.append(f"Your diagnosis ({diagnosis}) is considered complex, so special coverage rules apply.")
-
+    why_items.append(f"Applied rule: {rule_applied} ({company_name} policy)")
     if why_items:
         items_html = "".join(f"<li>{i}</li>" for i in why_items)
         sections.append(f'''
@@ -256,7 +315,6 @@ def _build_human_explanation(
     <div class="exp-section-title">Why We Made This Decision</div>
     <ul class="exp-list">{items_html}</ul>
   </div>''')
-
     if shap_factors:
         notable = [f for f in shap_factors[:5] if abs(f.get("contribution", 0)) >= 0.04]
         if notable:
@@ -280,16 +338,12 @@ def _build_human_explanation(
     <div class="exp-section-title">What the AI Looked At</div>
     <div class="exp-factors">{"".join(rows)}</div>
   </div>''')
-
     if decision == "Denied":
         sections.append('''
   <div class="exp-tip">
     <strong>What you can do:</strong> You can appeal this decision. Call the number on your insurance card and ask about the appeals process. Emergency cases may be an exception.
   </div>''')
-
     return "".join(sections).strip()
-
-
 def llm_calculate_reimbursement(
     data: dict,
     baseline: float,
@@ -300,20 +354,19 @@ def llm_calculate_reimbursement(
 ) -> dict:
     items_block = json.dumps(itemized_items, indent=2) if itemized_items else "No itemized data"
     item_count = len(itemized_items) if itemized_items else 0
-
     fraud_block = ""
     if fraud_result and fraud_result.get("label") == "HIGH_RISK":
         flags = ", ".join(fraud_result.get("flags", [])) or "none"
         fraud_block = f"\nFRAUD RISK: HIGH (score {fraud_result.get('fraud_score', 0):.3f}). Flags: {flags}.\n"
-
+    company_name = data.get("insurance_company", "Default Insurance")
+    rule_applied = breakdown.get("rule_applied", "default")
+    coverage_pct = breakdown.get("coverage_pct", 80)
     knowledge_summary = ""
     if rag_context:
         knowledge_summary = f"\nKNOWLEDGE BASE REFERENCE:\n{rag_context[:2000]}\n\nUse this to determine if claim amount is reasonable for this procedure/diagnosis.\n"
     else:
         knowledge_summary = "\nKNOWLEDGE BASE: No similar claims found. Rely on general medical insurance standards.\n"
-
     prompt = f"""You are a health insurance claims adjudicator using KNOWLEDGE-BASED decision making.
-
 CLAIM DETAILS:
 - Total Amount: ${data.get('claim_amount', 0):,.2f}
 - Pre-Authorization: {data.get('pre_auth', 'No')}
@@ -322,49 +375,41 @@ CLAIM DETAILS:
 - Procedure Code: {data.get('procedure_code') or 'N/A'}
 - Provider Specialty: {data.get('provider_specialty') or 'N/A'}
 - Hospital: {data.get('hospital_name') or 'N/A'}
+- Insurance Company: {company_name}
+- Rule Applied: {rule_applied}
+- Coverage Rate from Company Rules: {coverage_pct}%
 - Rule-Based Baseline (reference only): ${baseline:,.2f}
-- Coverage Rate from Rules: {breakdown.get("coverage_pct", 75)}%
 {fraud_block}
-
 ITEMIZED BILL ({item_count} items):
 {items_block}
-
 {knowledge_summary}
-
 DECISION PRINCIPLES (in priority order):
-
 1. PRE-AUTHORIZATION:
    - Pre-Auth = Yes --> Always approve (unless fraud detected)
    - Pre-Auth = No AND amount > ${PRE_AUTH_THRESHOLD:,.0f} --> Deny (policy violation)
    - Pre-Auth = No AND amount <= ${PRE_AUTH_THRESHOLD:,.0f} --> Approve at 70-85% of what you would give with pre-auth
-
 2. KNOWLEDGE-BASED REASONABLENESS:
    - Compare claim amount to similar claims in knowledge base
    - If claim is within 20% of knowledge base average --> approve at 80-100% of claim
    - If claim is 20-50% above knowledge base --> approve at 60-80% (partial)
    - If claim is >50% above knowledge base --> deny or approve at 30-50% (partial)
-
 3. ITEMIZED BILL REVIEW:
    - Flag any item >30% above knowledge base average
    - If flagged items <20% of total --> approve rest
    - If flagged items >50% of total --> deny or partial approval
-
 4. HIGH-RISK DIAGNOSIS (C50, C61, C34, E11, I21, I25):
    - Apply higher scrutiny but DO NOT automatically deny
    - If treatment is medically necessary (supported by knowledge base) --> approve
    - If treatment seems unnecessary/excessive --> partial or deny
-
 5. FRAUD SIGNALS:
    - HIGH_RISK + valid flags --> deny or reduce by 40-60%
    - HIGH_RISK + False Positive explanation --> proceed normally
    - MEDIUM_RISK --> reduce confidence, consider partial approval
-
 6. BASELINE IS REFERENCE ONLY:
-   - Baseline = ${baseline:,.2f} is calculated from rigid rules
+   - Baseline = ${baseline:,.2f} is calculated from {company_name}'s rules
    - You MAY deviate from baseline if knowledge base supports it
    - If knowledge base shows similar claims approved at higher amounts --> approve higher
    - You must explain WHY you deviated from baseline in the reason field
-
 Return ONLY valid JSON:
 {{
   "decision": "Approved" | "Partially Approved" | "Denied" | "Pending",
@@ -375,7 +420,6 @@ Return ONLY valid JSON:
   "policy_type": "standard" | "premium" | "high_risk",
   "confidence": 0.00
 }}"""
-
     try:
         res = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -394,21 +438,16 @@ Return ONLY valid JSON:
             return result
     except Exception as e:
         print(f"[claim_service] LLM error: {e}")
-
     return _fallback_decision(data, baseline)
-
-
 def _fallback_decision(data: dict, baseline: float) -> dict:
     pre_auth = data.get("pre_auth", "No")
     amount = float(data.get("claim_amount", 0))
-
     if not data.get("diagnosis_code"):
         return {
             "decision": "Pending", "reimbursement_amount": 0.0, "eligible_amount": 0.0,
             "reason": "missing_diagnosis_code", "flagged_items": [],
             "policy_type": "standard", "confidence": 0.60,
         }
-
     if pre_auth == "Yes":
         reimburse = round(baseline * 0.85, 2)
         return {
@@ -416,22 +455,18 @@ def _fallback_decision(data: dict, baseline: float) -> dict:
             "reason": "pre_authorization_confirmed", "flagged_items": [],
             "policy_type": "standard", "confidence": 0.82,
         }
-
     if amount > PRE_AUTH_THRESHOLD:
         return {
             "decision": "Denied", "reimbursement_amount": 0.0, "eligible_amount": 0.0,
             "reason": "no_pre_auth_exceeds_threshold", "flagged_items": [],
             "policy_type": "standard", "confidence": 0.90,
         }
-
     reduced = round(baseline * 0.70, 2)
     return {
         "decision": "Approved", "reimbursement_amount": reduced, "eligible_amount": reduced,
         "reason": "no_pre_auth_under_threshold", "flagged_items": [],
         "policy_type": "standard", "confidence": 0.75,
     }
-
-
 def get_decision(
     query=None,
     rag_context: str = "",
@@ -441,7 +476,6 @@ def get_decision(
 ) -> dict:
     raw = query if isinstance(query, dict) else {}
     parsed = parse_query(query)
-
     missing = detect_missing(parsed)
     if missing:
         return {
@@ -450,20 +484,15 @@ def get_decision(
             "explanation": "Some required fields are missing: " + ", ".join(missing) + ". Please provide complete information.",
             "confidence": 0.0,
         }
-
     claim_amount = _get_amount(parsed, raw)
     data = _build_data(parsed, claim_amount, raw)
-    baseline, breakdown = calculate_baseline_reimbursement(claim_amount, data)
-
+    baseline, breakdown, rule_applied = calculate_dynamic_reimbursement(claim_amount, data)
     llm_result = llm_calculate_reimbursement(
         data, baseline, breakdown, itemized_items or [], rag_context, fraud_result
     )
-
     shap_factors = shap_factors or []
-
     decision = llm_result.get("decision", "Pending")
     final_amount = float(llm_result.get("reimbursement_amount", baseline))
-
     if data["pre_auth"] == "No" and claim_amount > PRE_AUTH_THRESHOLD:
         final_amount = 0.0
         decision = "Denied"
@@ -471,16 +500,13 @@ def get_decision(
         min_allowed = baseline * 0.50
         max_allowed = baseline * 2.00
         final_amount = max(min_allowed, min(max_allowed, final_amount))
-
     llm_result["decision"] = decision
     llm_result["reimbursement_amount"] = round(final_amount, 2)
-
+    company_name = breakdown.get("company_name", "Default Insurance")
     knowledge_ref = ""
     if rag_context and final_amount != baseline:
-        knowledge_ref = f"The reimbursement amount was adjusted from the rule-based baseline (${baseline:,.2f}) based on similar claims in our knowledge base and medical necessity assessment."
-
+        knowledge_ref = f"The reimbursement amount was adjusted from {company_name}'s rule-based baseline (${baseline:,.2f}) based on similar claims in our knowledge base and medical necessity assessment."
     explanation = _build_human_explanation(data, breakdown, decision, final_amount, shap_factors=shap_factors, knowledge_reference=knowledge_ref)
-
     return {
         "status": "ok",
         "decision": decision,
@@ -496,9 +522,10 @@ def get_decision(
         "date_of_service": data["date_of_service"],
         "hospital_name": data["hospital_name"],
         "pre_auth": data["pre_auth"],
+        "insurance_company": company_name,
+        "rule_applied": rule_applied,
+        "reimbursement_percent": breakdown.get("reimbursement_percent", 0.80),
     }
-
-
 def _save_claim(db_claims, data: dict, decision_result: dict, raw_ocr_text: str = "") -> bool:
     if not db_claims:
         return False
@@ -523,6 +550,8 @@ def _save_claim(db_claims, data: dict, decision_result: dict, raw_ocr_text: str 
             reimbursement_amount=decision_result.get("reimbursement_amount", 0.0),
             decision=decision_result.get("decision"),
             confidence=decision_result.get("confidence"),
+            insurance_company=decision_result.get("insurance_company", ""),
+            rule_applied=decision_result.get("rule_applied", "default"),
             raw_ocr_text=raw_ocr_text[:10000] if raw_ocr_text else None,
         )
         db_claims.add(claim)
@@ -532,8 +561,6 @@ def _save_claim(db_claims, data: dict, decision_result: dict, raw_ocr_text: str 
         print(f"[claim_service] _save_claim error: {e}")
         db_claims.rollback()
         return False
-
-
 def process_claim(
     file_bytes: bytes = None,
     form_data: dict = None,
@@ -544,33 +571,26 @@ def process_claim(
     if file_bytes:
         from .ocr_service import ocr_image, clean_text
         raw_text = clean_text(ocr_image(file_bytes))
-
     extracted_data = extract_claim_data(raw_text) if raw_text else (form_data or {})
     parsed = parse_query(extracted_data)
     claim_amount = _get_amount(parsed, extracted_data)
     data = _build_data(parsed, claim_amount, extracted_data)
-
     diagnosis_code = (
         data.get("diagnosis_code") or
         extracted_data.get("DiagnosisCode") or
         extracted_data.get("diagnosis_code") or ""
     )
-
     items = extract_itemized_bill(raw_text, diagnosis_code) if raw_text else []
-
     saved_count = 0
     if db_knowledge and items:
         for item in items:
             _, action = upsert_knowledge_item(db_knowledge, item, diagnosis_code, "ocr_extracted")
             if action in ("created", "updated"):
                 saved_count += 1
-
     similar = vector_search(db_knowledge, str(items or extracted_data), diagnosis_code) if db_knowledge else []
     rag_context = build_rag_context(items, similar)
-
     fraud_result = predict_fraud(data)
     shap_contributions = explain_decision(data, fraud_result)
-
     decision_result = get_decision(
         query=extracted_data,
         rag_context=rag_context,
@@ -578,9 +598,7 @@ def process_claim(
         fraud_result=fraud_result,
         shap_factors=shap_contributions,
     )
-
     _save_claim(db_claims, data, decision_result, raw_text)
-
     return {
         "status": "ok",
         "raw_text_preview": raw_text[:2000] if raw_text else None,

@@ -162,30 +162,25 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-
 def clean_text(x):
     if x is None: return ""
     x = unicodedata.normalize("NFKC", str(x))
     x = re.sub(r"[\u200b-\u200f\ufeff\u00a0\x00-\x1f\x7f]", "", x)
     return re.sub(r"\s+", " ", x).strip()
 
-
 def safe_int(x):
     try: return int(re.search(r"\d+", str(x)).group())
     except: return 0
 
-
 def safe_float(x):
     try: return float(str(x).replace(",", "."))
     except: return 0.0
-
 
 def normalize_gender(x):
     xl = clean_text(x).lower()
     if "female" in xl: return "Female"
     if "male" in xl: return "Male"
     return ""
-
 
 def _is_blank(v, min_len=1):
     if v is None: return True
@@ -206,7 +201,6 @@ def merge_ocr_results(results):
                 if not clean_text(merged.get(k, "")) and clean_text(v):
                     merged[k] = clean_text(v)
     return merged
-
 
 DEFAULTS = {
     "patient_age": 0,
@@ -232,7 +226,6 @@ DEFAULTS = {
 for k, v in DEFAULTS.items():
     st.session_state.setdefault(k, v)
 
-
 def validate():
     s, e = st.session_state, []
     if s.patient_age <= 0: e.append("Age")
@@ -250,7 +243,6 @@ def validate():
     if _is_blank(s.policy_number): e.append("Policy Number / Member ID")
     return e
 
-
 def fl(label, tip, hl):
     is_err = label in hl
     text_cls = "err" if is_err else "ok"
@@ -263,7 +255,6 @@ def fl(label, tip, hl):
         f"</div>",
         unsafe_allow_html=True,
     )
-
 
 def render_result(r):
     decision = r.get("decision", "Pending")
@@ -588,7 +579,6 @@ def render_result(r):
 
 left, right = st.columns([1, 1.2])
 
-
 with left:
     st.markdown("<h3 style='margin-bottom:10px;'>Upload Documents</h3>", unsafe_allow_html=True)
     uploaded_files = st.file_uploader("Select Images", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
@@ -617,8 +607,9 @@ with left:
                 except:
                     st.error(f"Cannot load {img_info['name']}")
 
-        st.markdown("<div style='margin-bottom:8px;'></div>", unsafe_allow_html=True)
-        run_ocr = st.button(f"Run OCR ({n} image{'s' if n > 1 else ''})", use_container_width=True)
+        _, mid, _ = st.columns([1, 2, 1])
+        with mid:
+            run_ocr = st.button(f"Run OCR ({n} image{'s' if n > 1 else ''})", use_container_width=True)
 
         if run_ocr:
             extracted, errs = [], []
