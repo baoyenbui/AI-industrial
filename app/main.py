@@ -13,7 +13,6 @@ from app.services.claim_service  import process_claim
 
 app = FastAPI(title="AI Claim Approval System")
 
-
 def _audit(db, claim_id, action, user_id="system", details=None, request=None):
     ip         = request.client.host               if request else None
     user_agent = request.headers.get("user-agent") if request else None
@@ -23,14 +22,12 @@ def _audit(db, claim_id, action, user_id="system", details=None, request=None):
     ))
     db.commit()
 
-
 @app.exception_handler(RequestValidationError)
 async def _val_err(request: Request, exc: RequestValidationError):
     return JSONResponse(status_code=200, content={
         "status": "invalid_input", "decision": "Pending",
         "confidence": 0.0, "reason": "validation_failed", "errors": exc.errors(),
     })
-
 
 @app.get("/")
 def home():
