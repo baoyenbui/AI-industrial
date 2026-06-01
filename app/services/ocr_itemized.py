@@ -114,7 +114,7 @@ OCR TEXT:
 
     try:
         res = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             temperature=0.0,
             max_tokens=2000,
             messages=[

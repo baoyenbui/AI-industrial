@@ -22,16 +22,12 @@ class ClaimInput(BaseModel):
     DateOfService: Optional[str] = ""
     HospitalName:  Optional[str] = ""
 
-    # KHÔNG dùng Literal — frontend có thể gửi "Choose an option", None, ""
-    # claim_service sẽ normalize qua _resolve_pre_auth
+
     PreAuthorizationStatus: Optional[str] = "No"
 
     ClaimSubmissionMethod: Optional[str] = "unknown"
     ClaimStatus:           Optional[str] = "pending"
 
-    # ------------------------------------------------------------------ #
-    # Validators
-    # ------------------------------------------------------------------ #
 
     @field_validator("PatientGender", mode="before")
     @classmethod
