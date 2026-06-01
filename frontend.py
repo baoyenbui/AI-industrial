@@ -141,27 +141,6 @@ input::placeholder, textarea::placeholder { color:rgba(0,0,0,0.35) !important; }
 
 st.markdown("<h1 style='margin-bottom:10px;'>Health Claim Support System</h1>", unsafe_allow_html=True)
 
-
-st.markdown("""
-<style>
-.subtitle-box {
-    background: #f8f9fa;
-    border-left: 4px solid #667eea;
-    padding: 16px 20px;
-    margin: 0 0 30px 0;
-    border-radius: 8px;
-    font-style: italic;
-    font-size: 14.5px;
-    line-height: 1.6;
-    color: #555555;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}
-</style>
-<div class='subtitle-box'>
-    Intelligent insurance claim processing with AI-powered validation, OCR extraction, and transparent reimbursement calculations
-</div>
-""", unsafe_allow_html=True)
-
 def clean_text(x):
     if x is None: return ""
     x = unicodedata.normalize("NFKC", str(x))
@@ -580,8 +559,44 @@ def render_result(r):
 left, right = st.columns([1, 1.2])
 
 with left:
-    st.markdown("<h3 style='margin-bottom:10px;'>Upload Documents</h3>", unsafe_allow_html=True)
-    uploaded_files = st.file_uploader("Select Images", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+    st.markdown(
+        """
+        <div style="
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            background: #f9fafb;
+            padding: 16px 16px 14px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        ">
+            <h3 style="margin: 0 0 8px 0;">Upload Documents</h3>
+        <style>
+        .subtitle-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 16px 20px;
+            margin: 0 0 30px 0;
+            border-radius: 8px;
+            font-style: italic;
+            font-size: 14.5px;
+            line-height: 1.6;
+            color: #555555;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        </style>
+        <div class='subtitle-box'>
+            Upload any relevant documents (e.g., prescriptions, insurance policy terms, or medical bills) to ensure the most accurate response. 
+        </div>
+        """, 
+        unsafe_allow_html=True,
+        )
+
+    uploaded_files = st.file_uploader(
+        "Select Images",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+    )
+
     if uploaded_files:
         st.session_state["_uploaded_images"] = [{"bytes": f.getvalue(), "name": f.name} for f in uploaded_files]
     else:
@@ -593,8 +608,7 @@ with left:
         n = len(images_data)
         thumb_width = 160 if n <= 2 else (120 if n <= 4 else 95)
         st.markdown(
-            f"<div style='text-align:center;font-size:13px;color:#555;margin:12px 0 16px;'>"
-            f"{n} image{'s' if n > 1 else ''} selected</div>",
+            f"<div style='text-align:center;font-size:13px;color:#555;margin:12px 0 16px;'>{n} image{'s' if n > 1 else ''} selected</div>",
             unsafe_allow_html=True,
         )
         cols = st.columns(min(n, 5))
@@ -663,14 +677,43 @@ with left:
                 st.rerun()
     else:
         st.markdown(
-            "<div style='text-align:center;color:#888;font-size:14.5px;margin:50px 0;'>"
-            "<em>No images uploaded yet.</em></div>",
+            "<div style='text-align:center;color:#888;font-size:14.5px;margin:50px 0;'><em>No images uploaded yet.</em></div>",
             unsafe_allow_html=True,
         )
 
-
+    st.markdown("</div>", unsafe_allow_html=True)
+    
 with right:
-    st.markdown("<h3 style='margin-bottom:10px;'>Claim Information</h3>", unsafe_allow_html=True)
+    st.markdown(
+    """
+    <div style="
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        background: #f9fafb;
+        padding: 16px 16px 14px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    ">
+        <h3 style="margin: 0 0 8px 0;">Claim Information</h3>
+        <style>
+        .subtitle-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 16px 20px;
+            margin: 0 0 30px 0;
+            border-radius: 8px;
+            font-style: italic;
+            font-size: 14.5px;
+            line-height: 1.6;
+            color: #555555;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        </style>
+        <div class='subtitle-box'>
+            The extracted information may contain missing or incorrect details, so please review it carefully and complete any blank fields in the form.
+        </div>      
+    """,
+    unsafe_allow_html=True,
+    )
 
     hl = set(st.session_state.get("error_fields", []))
 
