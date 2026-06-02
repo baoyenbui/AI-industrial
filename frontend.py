@@ -4,7 +4,7 @@ from PIL import Image
 import io
 import re
 import unicodedata
-from datetime import datetime
+from datetime import datetime, date
 import time
 
 
@@ -138,31 +138,56 @@ input::placeholder, textarea::placeholder { color:rgba(0,0,0,0.35) !important; }
 </style>
 """, unsafe_allow_html=True)
 
+st.markdown(
+    """
+    <style>
+    div[data-testid="InputInstructions"] {
+        font-size: 11px !important;
+        line-height: 1 !important;
+    }
+
+    @media (max-width: 1200px) {
+        div[data-testid="InputInstructions"] {
+            display: none !important;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 st.markdown("<h1 style='margin-bottom:10px;'>Health Claim Support System</h1>", unsafe_allow_html=True)
 
 def clean_text(x):
-    if x is None: return ""
+    if x is None:
+        return ""
     x = unicodedata.normalize("NFKC", str(x))
     x = re.sub(r"[\u200b-\u200f\ufeff\u00a0\x00-\x1f\x7f]", "", x)
     return re.sub(r"\s+", " ", x).strip()
 
 def safe_int(x):
-    try: return int(re.search(r"\d+", str(x)).group())
-    except: return 0
+    try:
+        return int(re.search(r"\d+", str(x)).group())
+    except:
+        return 0
 
 def safe_float(x):
-    try: return float(str(x).replace(",", "."))
-    except: return 0.0
+    try:
+        return float(str(x).replace(",", "."))
+    except:
+        return 0.0
 
 def normalize_gender(x):
     xl = clean_text(x).lower()
-    if "female" in xl: return "Female"
-    if "male" in xl: return "Male"
+    if "female" in xl:
+        return "Female"
+    if "male" in xl:
+        return "Male"
     return ""
 
 def _is_blank(v, min_len=1):
-    if v is None: return True
+    if v is None:
+        return True
     return str(v).strip() == "" or len(str(v).strip()) < min_len
 
 def merge_ocr_results(results):
@@ -175,7 +200,8 @@ def merge_ocr_results(results):
             elif k in FIRST:
                 if not merged.get(k):
                     n = safe_int(v)
-                    if n: merged[k] = n
+                    if n:
+                        merged[k] = n
             else:
                 if not clean_text(merged.get(k, "")) and clean_text(v):
                     merged[k] = clean_text(v)
@@ -195,31 +221,46 @@ DEFAULTS = {
     "claim_status": "",
     "claim_amount": 0.0,
     "policy_number": "",
-    "date_of_service": datetime.today().date(),
+    "date_of_service": date.today(),
     "provider_name": "",
     "pre_auth_status": "Choose an option",
     "error_fields": [],
     "_api_result": None,
     "_uploaded_images": [],
 }
-for k, v in DEFAULTS.items():
-    st.session_state.setdefault(k, v)
+def initialize_session_state():
+    for k, v in DEFAULTS.items():
+        st.session_state.setdefault(k, v)
+initialize_session_state()
 
 def validate():
     s, e = st.session_state, []
-    if s.patient_age <= 0: e.append("Age")
-    if s.patient_gender in ("Choose the gender", "", None): e.append("Gender")
-    if _is_blank(s.patient_employment): e.append("Employment")
-    if s.claim_amount <= 0: e.append("Total Claim Amount (USD)")
-    if _is_blank(s.diagnosis): e.append("Diagnosis Code")
-    if _is_blank(s.provider_name, 3): e.append("Provider")
-    if s.pre_auth_status in ("Choose an option", "", None): e.append("Pre-Authorization Status")
-    if _is_blank(s.procedure): e.append("Procedure Code")
-    if _is_blank(s.claim_submission_method): e.append("Submission Method")
-    if _is_blank(s.provider_specialty): e.append("Provider Specialty")
-    if _is_blank(s.claim_type): e.append("Claim Type")
-    if _is_blank(s.patient_marital): e.append("Marital Status")
-    if _is_blank(s.policy_number): e.append("Policy Number / Member ID")
+    if s.patient_age <= 0:
+        e.append("Age")
+    if s.patient_gender in ("Choose the gender", "", None):
+        e.append("Gender")
+    if _is_blank(s.patient_employment):
+        e.append("Employment")
+    if s.claim_amount <= 0:
+        e.append("Total Claim Amount (USD)")
+    if _is_blank(s.diagnosis):
+        e.append("Diagnosis Code")
+    if _is_blank(s.provider_name, 3):
+        e.append("Provider")
+    if s.pre_auth_status in ("Choose an option", "", None):
+        e.append("Pre-Authorization Status")
+    if _is_blank(s.procedure):
+        e.append("Procedure Code")
+    if _is_blank(s.claim_submission_method):
+        e.append("Submission Method")
+    if _is_blank(s.provider_specialty):
+        e.append("Provider Specialty")
+    if _is_blank(s.claim_type):
+        e.append("Claim Type")
+    if _is_blank(s.patient_marital):
+        e.append("Marital Status")
+    if _is_blank(s.policy_number):
+        e.append("Policy Number / Member ID")
     return e
 
 def fl(label, tip, hl):
@@ -235,6 +276,32 @@ def fl(label, tip, hl):
         unsafe_allow_html=True,
     )
 
+def reset_claim_form():
+    defaults = {
+        "policy_number": "",
+        "provider_name": "",
+        "patient_age": 0,
+        "patient_gender": "Choose the gender",
+        "patient_income": 0.0,
+        "patient_employment": "",
+        "provider_specialty": "",
+        "claim_type": "",
+        "date_of_service": date.today(),
+        "pre_auth_status": "Choose an option",
+        "patient_marital": "",
+        "diagnosis": "",
+        "procedure": "",
+        "claim_submission_method": "",
+        "claim_status": "",
+        "claim_amount": 0.0,
+        "error_fields": [],
+        "_api_result": None,
+        "_uploaded_images": [],
+    }
+
+    for k, v in defaults.items():
+        st.session_state[k] = v
+    
 def render_result(r):
     decision = r.get("decision", "Pending")
     reimb = r.get("reimbursement_amount") or 0.0
@@ -569,32 +636,33 @@ with left:
             box-shadow: 0 1px 2px rgba(0,0,0,0.04);
         ">
             <h3 style="margin: 0 0 8px 0;">Upload Documents</h3>
-        <style>
-        .subtitle-box {
-            background: #f8f9fa;
-            border-left: 4px solid #667eea;
-            padding: 16px 20px;
-            margin: 0 0 30px 0;
-            border-radius: 8px;
-            font-style: italic;
-            font-size: 14.5px;
-            line-height: 1.6;
-            color: #555555;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-        }
-        </style>
-        <div class='subtitle-box'>
-            Upload any relevant documents (e.g., prescriptions, insurance policy terms, or medical bills) to ensure the most accurate response. 
-        </div>
-        """, 
+            <style>
+            .subtitle-box {
+                background: #f8f9fa;
+                border-left: 4px solid #667eea;
+                padding: 16px 20px;
+                margin: 0 0 30px 0;
+                border-radius: 8px;
+                font-style: italic;
+                font-size: 14.5px;
+                line-height: 1.6;
+                color: #555555;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            }
+            </style>
+            <div class='subtitle-box'>
+                Upload any relevant documents (e.g., prescriptions, insurance policy terms, or medical bills) to ensure the most accurate response.
+            </div>
+        """,
         unsafe_allow_html=True,
-        )
+    )
 
     uploaded_files = st.file_uploader(
         "Select Images",
         type=["png", "jpg", "jpeg"],
         accept_multiple_files=True,
         label_visibility="collapsed",
+        key="uploader",
     )
 
     if uploaded_files:
@@ -683,45 +751,44 @@ with left:
 
     st.markdown("</div>", unsafe_allow_html=True)
     
+    
 with right:
     st.markdown(
-    """
-    <div style="
-        border: 1px solid #e5e7eb;
-        border-radius: 14px;
-        background: #f9fafb;
-        padding: 16px 16px 14px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-    ">
-        <h3 style="margin: 0 0 8px 0;">Claim Information</h3>
-        <style>
-        .subtitle-box {
-            background: #f8f9fa;
-            border-left: 4px solid #667eea;
-            padding: 16px 20px;
-            margin: 0 0 30px 0;
-            border-radius: 8px;
-            font-style: italic;
-            font-size: 14.5px;
-            line-height: 1.6;
-            color: #555555;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-        }
-        </style>
-        <div class='subtitle-box'>
-            The extracted information may contain missing or incorrect details, so please review it carefully and complete any blank fields in the form.
-        </div>      
-    """,
-    unsafe_allow_html=True,
+        """
+        <div style="
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            background: #f9fafb;
+            padding: 16px 16px 14px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        ">
+            <h3 style="margin: 0 0 8px 0;">Claim Information</h3>
+            <style>
+            .subtitle-box {
+                background: #f8f9fa;
+                border-left: 4px solid #667eea;
+                padding: 16px 20px;
+                margin: 0 0 30px 0;
+                border-radius: 8px;
+                font-style: italic;
+                font-size: 14.5px;
+                line-height: 1.6;
+                color: #555555;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            }
+            </style>
+            <div class='subtitle-box'>
+                The extracted information may contain missing or incorrect details, so please review it carefully and complete any blank fields in the form.
+            </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     hl = set(st.session_state.get("error_fields", []))
 
     if hl:
         st.markdown(
-            "<div style='background:#fff0f0;border:1.5px solid #CC0000;border-radius:8px;"
-            "padding:10px 14px;margin-bottom:14px;font-size:13px;color:#CC0000 !important;'>"
-            "⚠ Please complete the required fields</div>",
+            "<div style='background:#fff0f0;border:1.5px solid #CC0000;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#CC0000 !important;'>⚠ Please complete the required fields</div>",
             unsafe_allow_html=True,
         )
 
@@ -729,103 +796,101 @@ with right:
         c1, c2 = st.columns(2)
 
         with c1:
-            fl("Policy Number / Member ID",
-               "Your insurance policy number or member ID - usually found on your insurance card or welcome letter.",
-               hl)
-            st.text_input("Policy Number / Member ID", placeholder="e.g. POL123456789",
-                          key="policy_number", label_visibility="collapsed")
+            fl("Policy Number / Member ID", "Your insurance policy number or member ID - usually found on your insurance card or welcome letter.", hl)
+            st.text_input("Policy Number / Member ID", placeholder="e.g. POL123456789", key="policy_number", label_visibility="collapsed")
 
-            fl("Provider",
-               "The entity that provided this bill/document (hospital, clinic, or insurance company).",
-               hl)
-            st.text_input("Provider", placeholder="e.g. Vinmec",
-                          key="provider_name", label_visibility="collapsed")
+            fl("Provider", "The entity that provided this bill/document (hospital, clinic, or insurance company).", hl)
+            st.text_input("Provider", placeholder="e.g. Vinmec", key="provider_name", label_visibility="collapsed")
 
-            fl("Age",
-               "The patient's current age in years. Must be between 1 and 120.",
-               hl)
-            st.number_input("Age", min_value=0, max_value=120, step=1,
-                            key="patient_age", label_visibility="collapsed")
+            fl("Age", "The patient's current age in years. Must be between 1 and 120.", hl)
+            st.number_input("Age", min_value=0, max_value=120, step=1, key="patient_age", label_visibility="collapsed")
 
-            fl("Gender",
-               "The patient's gender as recorded in their medical or insurance record.",
-               hl)
-            st.selectbox("Gender", ["Choose the gender", "Male", "Female", "Other"],
-                         key="patient_gender", label_visibility="collapsed")
+            fl("Gender", "The patient's gender as recorded in their medical or insurance record.", hl)
+            st.selectbox("Gender", ["Choose the gender", "Male", "Female", "Other"], key="patient_gender", label_visibility="collapsed")
 
-            fl("Income (USD/month)",
-               "The patient's average monthly income before tax. This helps assess the appropriate coverage tier.",
-               hl)
-            st.number_input("Income (USD/month)", min_value=0.0, step=100.0, format="%.0f",
-                            key="patient_income", label_visibility="collapsed")
+            fl("Income (USD/month)", "The patient's average monthly income before tax. This helps assess the appropriate coverage tier.", hl)
+            st.number_input("Income (USD/month)", min_value=0.0, step=100.0, format="%.0f", key="patient_income", label_visibility="collapsed")
 
-            fl("Employment",
-               "Current employment status - e.g. Employed, Self-employed, Unemployed, Retired, or Student.",
-               hl)
-            st.text_input("Employment", placeholder="e.g. Employed",
-                          key="patient_employment", label_visibility="collapsed")
+            fl("Employment", "Current employment status - e.g. Employed, Self-employed, Unemployed, Retired, or Student.", hl)
+            st.text_input("Employment", placeholder="e.g. Employed", key="patient_employment", label_visibility="collapsed")
 
-            fl("Provider Specialty",
-               "The medical specialty of the treating doctor - e.g. Cardiology, Orthopedics, Pediatrics.",
-               hl)
-            st.text_input("Provider Specialty", placeholder="e.g. Cardiology",
-                          key="provider_specialty", label_visibility="collapsed")
+            fl("Provider Specialty", "The medical specialty of the treating doctor - e.g. Cardiology, Orthopedics, Pediatrics.", hl)
+            st.text_input("Provider Specialty", placeholder="e.g. Cardiology", key="provider_specialty", label_visibility="collapsed")
 
-            fl("Claim Type",
-               "The category of this claim - e.g. Medical, Dental, Vision, Pharmacy, or Mental Health.",
-               hl)
-            st.text_input("Claim Type", placeholder="e.g. Medical",
-                          key="claim_type", label_visibility="collapsed")
+            fl("Claim Type", "The category of this claim - e.g. Medical, Dental, Vision, Pharmacy, or Mental Health.", hl)
+            st.text_input("Claim Type", placeholder="e.g. Medical", key="claim_type", label_visibility="collapsed")
 
         with c2:
-            fl("Date of Service",
-               "The date when the medical treatment or service was received. Must match your medical bill.",
-               hl)
+            fl("Date of Service", "The date when the medical treatment or service was received. Must match your medical bill.", hl)
             st.date_input("Date of Service", key="date_of_service", label_visibility="collapsed")
 
-            fl("Pre-Authorization Status",
-               "Whether your insurer approved this treatment in advance. Select Yes if you received a pre-auth number before the visit.",
-               hl)
-            st.selectbox("Pre-Authorization Status", ["Choose an option", "Yes", "No"],
-                         key="pre_auth_status", label_visibility="collapsed")
+            fl("Pre-Authorization Status", "Whether your insurer approved this treatment in advance. Select Yes if you received a pre-auth number before the visit.", hl)
+            st.selectbox("Pre-Authorization Status", ["Choose an option", "Yes", "No"], key="pre_auth_status", label_visibility="collapsed")
 
-            fl("Marital Status",
-               "Patient's marital status - e.g. Single, Married, Divorced, or Widowed.",
-               hl)
-            st.text_input("Marital Status", placeholder="e.g. Single",
-                          key="patient_marital", label_visibility="collapsed")
+            fl("Marital Status", "Patient's marital status - e.g. Single, Married, Divorced, or Widowed.", hl)
+            st.text_input("Marital Status", placeholder="e.g. Single", key="patient_marital", label_visibility="collapsed")
 
-            fl("Diagnosis Code",
-               "The ICD-10 code your doctor assigned - a letter followed by numbers, e.g. J18.9 (pneumonia).",
-               hl)
-            st.text_input("Diagnosis Code", placeholder="e.g. J18.9",
-                          key="diagnosis", label_visibility="collapsed")
+            fl("Diagnosis Code", "The ICD-10 code your doctor assigned - a letter followed by numbers, e.g. J18.9 (pneumonia).", hl)
+            st.text_input("Diagnosis Code", placeholder="e.g. J18.9", key="diagnosis", label_visibility="collapsed")
 
-            fl("Procedure Code",
-               "The CPT code for the treatment performed: a 5-digit number on your bill, e.g. 99213.",
-               hl)
-            st.text_input("Procedure Code", placeholder="e.g. 99213",
-                          key="procedure", label_visibility="collapsed")
+            fl("Procedure Code", "The CPT code for the treatment performed: a 5-digit number on your bill, e.g. 99213.", hl)
+            st.text_input("Procedure Code", placeholder="e.g. 99213", key="procedure", label_visibility="collapsed")
 
-            fl("Submission Method",
-               "How this claim is being submitted - e.g. Online, Paper, Fax, or via the Hospital directly.",
-               hl)
-            st.text_input("Submission Method", placeholder="e.g. Online",
-                          key="claim_submission_method", label_visibility="collapsed")
+            fl("Submission Method", "How this claim is being submitted - e.g. Online, Paper, Fax, or via the Hospital directly.", hl)
+            st.text_input("Submission Method", placeholder="e.g. Online", key="claim_submission_method", label_visibility="collapsed")
 
-            fl("Claim Status",
-               "Current status of this claim if known — e.g. Pending, Approved, or Denied.",
-               hl)
-            st.text_input("Claim Status", placeholder="e.g. Pending",
-                          key="claim_status", label_visibility="collapsed")
+            fl("Claim Status", "Current status of this claim if known — e.g. Pending, Approved, or Denied.", hl)
+            st.text_input("Claim Status", placeholder="e.g. Pending", key="claim_status", label_visibility="collapsed")
 
-            fl("Total Claim Amount (USD)",
-               "Total amount billed by the provider before insurance adjustment — found at the bottom of your invoice.",
-               hl)
-            st.number_input("Total Claim Amount (USD)", min_value=0.0, step=100.0, format="%.0f",
-                            key="claim_amount", label_visibility="collapsed")
+            fl("Total Claim Amount (USD)", "Total amount billed by the provider before insurance adjustment — found at the bottom of your invoice.", hl)
+            st.number_input("Total Claim Amount (USD)", min_value=0.0, step=100.0, format="%.0f", key="claim_amount", label_visibility="collapsed")
 
         submitted = st.form_submit_button("Submit Claim", use_container_width=True)
+
+    st.markdown(
+        """
+        <style>
+        .st-key-reset_form_btn {
+            display: flex !important;
+            justify-content: center !important;
+        }
+
+        .st-key-reset_form_btn .stButton {
+            width: fit-content !important;
+        }
+
+        .st-key-reset_form_btn .stButton > button {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            min-height: 0 !important;
+            height: auto !important;
+            width: fit-content !important;
+            appearance: none !important;
+            -webkit-appearance: none !important;
+        }
+
+        .st-key-reset_form_btn .stButton > button p {
+            color: #dc2626 !important;
+            font-weight: 600 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        .st-key-reset_form_btn .stButton > button:hover p {
+            color: #b91c1c !important;
+            text-decoration: underline !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    c1, c2, c3 = st.columns([2, 1, 2])
+    with c2:
+        st.button("Clear your form", key="reset_form_btn", on_click=reset_claim_form)
 
 if submitted or st.session_state.get("_api_result"):
     if submitted:
