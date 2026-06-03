@@ -1,8 +1,12 @@
 import json
-import re
 import os
+import re
+import hashlib
+from difflib import SequenceMatcher
 from groq import Groq
 from dotenv import load_dotenv
+
+user_bills_db = {}
 
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -19,191 +23,23 @@ VALID_CATEGORIES = {
     "Imaging", "Consultation", "Surgery", "Supplies", "Others",
 }
 
-DRUG_KEYWORDS = [
-    "paracetamol", "acetaminophen", "ibuprofen", "diclofenac", "omeprazole", "pantoprazole",
-    "amoxicillin", "augmentin", "azithromycin", "cefixime", "ciprofloxacin", "metronidazole",
-    "dexamethasone", "prednisolone", "methylprednisolone", "cetirizine", "loratadine",
-    "domperidone", "metoclopramide", "omeprazol", "lansoprazole", "rabeprazole",
-    "clarithromycin", "levofloxacin", "moxifloxacin", "gentamicin", "vancomycin",
-    "oseltamivir", "acyclovir", "valacyclovir", "vitamin c", "vitamin b", "calcium", "zinc",
-    "mg", "gram", "g", "ml", "capsule", "tablet", "tab", "cap", "syrup", "injection", "iv",
-]
+DEBUG_ENABLED = True
 
-def extract_itemized_bill(text: str, diagnosis_code: str = None) -> list:
-    if not text or not text.strip():
-        return []
 
-    cleaned = clean_ocr_text(text)
-    if len(cleaned) < 20:
-        return []
+def log(*args):
+    if DEBUG_ENABLED:
+        print(*args)
 
-    disease_context = _map_icd_to_disease_text(diagnosis_code) if diagnosis_code else "Unknown diagnosis"
 
-    prompt = f"""Extract every line item from the medical invoice OCR text below.
-
-Diagnosis context: {disease_context} (ICD code: {diagnosis_code or "Unknown"})
-
-CRITICAL RULES FOR DRUG EXTRACTION:
-1. If item contains ANY drug keyword (mg, gram, capsule, tablet, or drug names like paracetamol, amoxicillin, omeprazole), mark category="Medicine" and EXTRACT the DRUG NAME explicitly.
-2. Drug name extraction: Look for patterns like "Paracetamol 500mg", "Augmentin 625mg", "Omeprazole 20mg". Extract the FULL drug name + dosage.
-3. If diagnosis code is provided (e.g., J02 = Acute Pharyngitis), ADD disease context to description: "Acute Pharyngitis - Paracetamol 500mg".
-4. Do NOT classify room, board, lab, imaging, consultation as Medicine.
-
-HANDLE THESE OCR ISSUES:
-- Misaligned columns and broken lines
-- Merged cells rendered on separate lines
-- Number artifacts: "1O0" → 100, "S500" → $500, "1.500,00" → 1500.00
-- Abbreviated descriptions: "Rm & Brd Prv" → "Room and Board Private", "Amox 500" → "Amoxicillin 500mg"
-- Missing separators between quantity / unit price / total
-
-CATEGORY RULES (pick exactly one):
-- Medicine: drugs, medications, pharmaceuticals, IV fluids, ANY item with mg/gram/capsule/tablet
-- Procedure: treatments, therapy, interventions (non-surgical)
-- Room: room, board, accommodation, nursing care, ward
-- Lab: blood tests, urine tests, cultures, pathology
-- Imaging: X-ray, CT, MRI, ultrasound, PET scan
-- Consultation: doctor visits, specialist fees, physician fees
-- Surgery: operating room, surgical procedures, anesthesia
-- Supplies: bandages, gloves, syringes, consumables
-- Others: anything that does not fit above
-
-CONFIDENCE SCORING:
-- 0.90+  clearly labeled, no OCR noise
-- 0.70-0.89  inferred from context, minor noise
-- 0.50-0.69  ambiguous, multiple interpretations
-- <0.50  heavily degraded, best guess
-
-FEW-SHOT EXAMPLES:
-Input:  "Paracetamol 500mg #30 tabs  1  $5.00  $5.00"  with diagnosis J02
-Output: {{"description":"Acute Pharyngitis - Paracetamol 500mg","quantity":1,"unit_price":5.0,"total":5.0,"category":"Medicine","code":null,"confidence":0.95,"drug_name":"Paracetamol 500mg","disease_name":"Acute Pharyngitis"}}
-
-Input:  "Augmentin 625mg #14  2  $25.00  $50.00"  with diagnosis J03
-Output: {{"description":"Acute Tonsillitis - Augmentin 625mg","quantity":2,"unit_price":25.0,"total":50.0,"category":"Medicine","code":null,"confidence":0.93,"drug_name":"Augmentin 625mg","disease_name":"Acute Tonsillitis"}}
-
-Input:  "Rm & Brd Prv 01/15/24  1  $850.00  $850.00"
-Output: {{"description":"Room and Board Private","quantity":1,"unit_price":850.0,"total":850.0,"category":"Room","code":null,"confidence":0.88,"drug_name":null,"disease_name":null}}
-
-Input:  "CBC w/ DIFF   1   45.00   45.00"
-Output: {{"description":"Complete Blood Count with Differential","quantity":1,"unit_price":45.0,"total":45.0,"category":"Lab","code":null,"confidence":0.90,"drug_name":null,"disease_name":null}}
-
-Input:  "Omeprazole 20mg  30 cap  1  $12.00"  with diagnosis K29
-Output: {{"description":"Gastritis - Omeprazole 20mg","quantity":1,"unit_price":12.0,"total":12.0,"category":"Medicine","code":null,"confidence":0.92,"drug_name":"Omeprazole 20mg","disease_name":"Gastritis"}}
-
-Return ONLY valid JSON, no markdown, no explanation:
-{{
-  "total_billed": number or null,
-  "currency": "USD",
-  "ocr_quality": "high" | "medium" | "low",
-  "items": [
-    {{
-      "description": "string (include disease name if diagnosis_code provided AND this is a Medicine)",
-      "quantity": number or null,
-      "unit_price": number or null,
-      "total": number,
-      "category": "Medicine|Procedure|Room|Lab|Imaging|Consultation|Surgery|Supplies|Others",
-      "code": "string or null",
-      "confidence": number,
-      "drug_name": "string or null (extract full drug name + dosage if Medicine)",
-      "disease_name": "string or null (only if diagnosis_code provided)"
-    }}
-  ]
-}}
-
-OCR TEXT:
-{cleaned}"""
-
-    try:
-        res = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            temperature=0.0,
-            max_tokens=2000,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": prompt},
-            ],
-            response_format={"type": "json_object"},
-        )
-
-        raw    = res.choices[0].message.content
-        parsed = json.loads(raw)
-        items  = parsed.get("items", [])
-
-        if not items and parsed.get("total_billed"):
-            print(
-                f"[ocr_itemized] Warning: total_billed={parsed['total_billed']} "
-                f"but 0 items extracted. ocr_quality={parsed.get('ocr_quality')}"
-            )
-
-        return [_validate_item(i) for i in items if _is_valid_item(i)]
-
-    except json.JSONDecodeError as e:
-        print(f"[ocr_itemized] JSON parse error: {e}")
-        return []
-    except Exception as e:
-        print(f"[ocr_itemized] extract_itemized_bill error: {e}")
-        return []
-
-def _is_valid_item(item: dict) -> bool:
-    if not isinstance(item, dict):
-        return False
-    desc = str(item.get("description") or "").strip()
-    if not desc or len(desc) < 3:
-        return False
-    total = item.get("total")
-    if total is None:
-        return False
-    try:
-        if float(total) < 0:
-            return False
-    except (TypeError, ValueError):
-        return False
-    return True
-
-def _validate_item(item: dict) -> dict:
-    quantity    = _safe_float(item.get("quantity"))
-    unit_price  = _safe_float(item.get("unit_price"))
-    total       = _safe_float(item.get("total")) or 0.0
-
-    if quantity and unit_price:
-        computed = round(quantity * unit_price, 2)
-        if abs(computed - total) > 0.10:
-            total = computed
-
-    category = item.get("category", "Others")
-    if category not in VALID_CATEGORIES:
-        category = "Others"
-
-    confidence = _safe_float(item.get("confidence")) or 0.65
-    confidence = max(0.0, min(1.0, confidence))
-
-    code = item.get("code")
-    code = str(code).strip() if code and str(code).strip() not in ("None", "null", "") else None
-
-    drug_name = item.get("drug_name")
-    drug_name = str(drug_name).strip() if drug_name and str(drug_name).strip() not in ("None", "null", "") else None
-
-    disease_name = item.get("disease_name")
-    disease_name = str(disease_name).strip() if disease_name and str(disease_name).strip() not in ("None", "null", "") else None
-
-    return {
-        "description": str(item.get("description", "")).strip(),
-        "quantity":    quantity,
-        "unit_price":  unit_price,
-        "total":       total,
-        "category":    category,
-        "code":        code,
-        "confidence":  round(confidence, 3),
-        "drug_name":   drug_name,
-        "disease_name": disease_name,
-    }
-
-def clean_ocr_text(text: str) -> str:
-    if not text:
+def normalize_text_value(x) -> str:
+    if x is None:
         return ""
-    text = re.sub(r"[^\w\s\.\:\-\$\,\(\)/\%\#\@]", " ", text)
-    text = re.sub(r"[ \t]{2,}", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()[:8000]
+    return re.sub(r"\s+", " ", str(x)).strip()
+
+
+def normalize_text(x) -> str:
+    return normalize_text_value(x).lower()
+
 
 def _safe_float(x) -> float | None:
     if x is None:
@@ -216,6 +52,18 @@ def _safe_float(x) -> float | None:
         return round(float(s), 2)
     except (ValueError, TypeError):
         return None
+
+
+def clean_ocr_text(text: str) -> str:
+    if not text:
+        return ""
+    s = str(text)
+    s = re.sub(r"[^\w\s\.\:\-\$\,\(\)/\%\#\@]", " ", s)
+    s = re.sub(r"[ \t]{2,}", " ", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    s = s.strip()
+    return s[:8000]
+
 
 def _map_icd_to_disease_text(code: str) -> str:
     mapping = {
@@ -233,6 +81,8 @@ def _map_icd_to_disease_text(code: str) -> str:
         "K27": "Peptic ulcer",
         "K29": "Gastritis",
     }
+    if not code:
+        return ""
     base = code[:3]
     full = code[:5] if len(code) >= 5 else None
     if full and full in mapping:
@@ -240,3 +90,402 @@ def _map_icd_to_disease_text(code: str) -> str:
     if base in mapping:
         return mapping[base]
     return f"Disease {code}"
+
+
+def parse_items_with_regex(text: str) -> list:
+    items = []
+    pattern = r'(Medical services performed \d+)\s+\$(\d+)\s+(\d{2})\b'
+    for match in re.finditer(pattern, text):
+        desc  = normalize_text_value(match.group(1)).strip()
+        price = int(match.group(2)) + int(match.group(3)) / 100.0
+        items.append({
+            "description": desc,
+            "quantity":    1,
+            "unit_price":  round(price, 2),
+            "total":       round(price, 2),
+            "category":    "Procedure",
+            "code":        None,
+            "confidence":  0.95,
+            "drug_name":   None,
+            "disease_name":None,
+        })
+    if not items:
+        pattern2   = r'(\w+[\w\s]*?\d+)\s+\$(\d+)\s+(\d{2})\b'
+        skip_words = ['subtotal','tax','total','payment','account','name','bank','item','description','price']
+        for match in re.finditer(pattern2, text):
+            desc = normalize_text_value(match.group(1)).strip()
+            if any(s in desc.lower() for s in skip_words):
+                continue
+            price = int(match.group(2)) + int(match.group(3)) / 100.0
+            if len(desc) >= 3 and 5 <= price <= 500:
+                items.append({
+                    "description": desc,
+                    "quantity":    1,
+                    "unit_price":  round(price, 2),
+                    "total":       round(price, 2),
+                    "category":    "Procedure",
+                    "code":        None,
+                    "confidence":  0.85,
+                    "drug_name":   None,
+                    "disease_name":None,
+                })
+    return items
+
+
+def _is_valid_item(item: dict) -> bool:
+    if not isinstance(item, dict):
+        return False
+    desc = str(item.get("description") or "").strip()
+    if not desc or len(desc) < 3:
+        return False
+    total = item.get("total")
+    if total is None:
+        return False
+    try:
+        if float(total) < 0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _validate_item(item: dict) -> dict:
+    quantity   = _safe_float(item.get("quantity"))
+    unit_price = _safe_float(item.get("unit_price"))
+    total      = _safe_float(item.get("total"))
+    if quantity and unit_price:
+        computed = round(quantity * unit_price, 2)
+        if abs(computed - (total or 0)) > 0.10:
+            total = computed
+    category   = item.get("category", "Others")
+    if category not in VALID_CATEGORIES:
+        category = "Others"
+    confidence = max(0.0, min(1.0, _safe_float(item.get("confidence")) or 0.65))
+    return {
+        "description":  normalize_text_value(item.get("description")),
+        "quantity":     quantity,
+        "unit_price":   unit_price,
+        "total":        total or 0.0,
+        "category":     category,
+        "code":         normalize_text_value(item.get("code")),
+        "confidence":   round(confidence, 3),
+        "drug_name":    normalize_text_value(item.get("drug_name")),
+        "disease_name": normalize_text_value(item.get("disease_name")),
+    }
+
+
+def item_fingerprint(item: dict) -> str:
+    raw = "|".join([
+        normalize_text_value(item.get("description")),
+        normalize_text_value(item.get("drug_name")),
+        normalize_text_value(item.get("category")),
+        str(item.get("quantity")),
+        str(item.get("unit_price")),
+        str(item.get("total")),
+        normalize_text_value(item.get("code")),
+    ])
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def dedupe_items(items: list[dict]) -> list[dict]:
+    seen, unique = set(), []
+    for item in items:
+        key = item_fingerprint(item)
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique
+
+
+def extract_itemized_bill(text: str, diagnosis_code: str = None) -> list:
+    if not text or not text.strip():
+        log("[extract_itemized_bill] empty text")
+        return []
+    cleaned = clean_ocr_text(text)
+    log("[extract_itemized_bill] cleaned_len =", len(cleaned))
+    if len(cleaned) < 20:
+        log("[extract_itemized_bill] cleaned too short")
+        return []
+
+    regex_items = parse_items_with_regex(cleaned)
+    log("[extract_itemized_bill] regex_items_count =", len(regex_items))
+
+    if regex_items:
+        parsed = {
+            "patient_name":  None,
+            "total_billed":  None,
+            "currency":      "USD",
+            "ocr_quality":   "medium",
+            "vendor_name":   None,
+            "hospital_name": None,
+            "bill_date":     None,
+            "bill_id":       None,
+            "diagnosis_text":None,
+            "ocr_text":      cleaned,
+            "items":         regex_items,
+        }
+        m = re.search(r'([A-Z][a-z]+\s+[A-Z][a-z]+)\s+Male', cleaned, re.IGNORECASE)
+        if m:
+            parsed["patient_name"] = m.group(1)
+        m = re.search(
+            r'DATE[:\s]+(\d{1,2})\s+(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST'
+            r'|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER|JAN|FEB|MAR|APR|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{4})',
+            cleaned, re.IGNORECASE,
+        )
+        if m:
+            parsed["bill_date"] = f"{m.group(1)} {m.group(2).upper()} {m.group(3)}"
+        if diagnosis_code:
+            parsed["diagnosis_text"] = _map_icd_to_disease_text(diagnosis_code)
+        parsed["total_billed"] = round(sum(i.get("total") or 0 for i in regex_items), 2)
+        log("[extract_itemized_bill] header_fields =", json.dumps(
+            {k: parsed.get(k) for k in [
+                "patient_name","vendor_name","hospital_name","bill_date","bill_id",
+                "diagnosis_text","total_billed","currency","ocr_quality",
+            ]} | {"items_count": len(parsed["items"])},
+            ensure_ascii=False, indent=2,
+        ))
+        return [parsed]
+
+    disease_context = _map_icd_to_disease_text(diagnosis_code) if diagnosis_code else "Unknown diagnosis"
+    prompt = f"""Extract every line item from the medical invoice OCR text below.
+
+Diagnosis context: {disease_context} (ICD code: {diagnosis_code or "Unknown"})
+
+Return ONLY valid JSON:
+{{
+  "patient_name": "string or null",
+  "total_billed": number or null,
+  "currency": "USD",
+  "ocr_quality": "high" | "medium" | "low",
+  "vendor_name": "string or null",
+  "hospital_name": "string or null",
+  "bill_date": "string or null",
+  "bill_id": "string or null",
+  "diagnosis_text": "string or null",
+  "items": [
+    {{
+      "description": "string",
+      "quantity": number or null,
+      "unit_price": number,
+      "total": number,
+      "category": "Medicine|Procedure|Room|Lab|Imaging|Consultation|Surgery|Supplies|Others",
+      "code": "string or null",
+      "confidence": number,
+      "drug_name": "string or null",
+      "disease_name": "string or null"
+    }}
+  ]
+}}
+
+Money format: '$10 00' = 10.00 USD. '$50 00' = 50.00 USD.
+
+OCR TEXT:
+{cleaned}"""
+
+    try:
+        log("[extract_itemized_bill] prompt_preview =", prompt[:1600])
+        res = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            temperature=0.0,
+            max_tokens=2200,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user",   "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+        )
+        raw    = res.choices[0].message.content
+        log("[extract_itemized_bill] raw_response =", raw[:5000])
+        parsed = json.loads(raw)
+        log("RAW PARSED JSON")
+        log(json.dumps(parsed, ensure_ascii=False, indent=2))
+
+        items     = parsed.get("items", [])
+        validated = [_validate_item(i) for i in items if _is_valid_item(i)]
+        parsed["items"] = dedupe_items(validated)
+        log("[extract_itemized_bill] items_count_deduped =", len(parsed["items"]))
+
+        for k in ["patient_name","vendor_name","hospital_name","bill_date","bill_id","diagnosis_text","currency"]:
+            parsed[k] = normalize_text_value(parsed.get(k))
+        parsed["currency"]     = parsed["currency"] or "usd"
+        parsed["total_billed"] = _safe_float(parsed.get("total_billed"))
+        parsed["ocr_text"]     = cleaned
+        return [parsed]
+    except Exception as e:
+        log(f"[extract_itemized_bill] error: {e}")
+        return []
+
+
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity as sk_cosine
+    _has_tfidf = True
+except Exception:
+    _has_tfidf = False
+
+
+def text_similarity(a: str, b: str) -> float:
+    a_norm = normalize_text(a)
+    b_norm = normalize_text(b)
+    if not a_norm or not b_norm:
+        return 0.0
+    if _has_tfidf:
+        try:
+            vec = TfidfVectorizer().fit_transform([a_norm, b_norm])
+            return float(sk_cosine(vec[0:1], vec[1:2])[0, 0])
+        except Exception:
+            pass
+    return SequenceMatcher(None, a_norm, b_norm).ratio()
+
+
+def items_signature(bill: dict) -> dict:
+    items  = bill.get("items") or []
+    descs  = sorted([normalize_text_value(i.get("description")) for i in items if i.get("description")])
+    totals = sorted([str(_safe_float(i.get("total")) or "") for i in items if i.get("total") is not None])
+    return {
+        "count":     len(items),
+        "text":      normalize_text(" | ".join(descs + totals)),
+        "set":       set(normalize_text(d) for d in descs if d),
+        "total_set": set(totals),
+    }
+
+
+def items_similarity(new: dict, old: dict) -> float:
+    n_sig = items_signature(new)
+    o_sig = items_signature(old)
+    s_n, s_o = n_sig["set"], o_sig["set"]
+    jacc = 0.0
+    if s_n or s_o:
+        inter = len(s_n & s_o)
+        union = len(s_n | s_o)
+        jacc  = inter / union if union else 0.0
+    txt_sim    = text_similarity(n_sig["text"], o_sig["text"])
+    t_n, t_o   = n_sig["total_set"], o_sig["total_set"]
+    total_jacc = 0.0
+    if t_n or t_o:
+        t_inter    = len(t_n & t_o)
+        t_union    = len(t_n | t_o)
+        total_jacc = t_inter / t_union if t_union else 0.0
+    return max(jacc, txt_sim * 0.95, total_jacc * 0.9)
+
+
+def core_signature(bill: dict) -> dict:
+    ocr = bill.get("ocr_text") or " ".join(i.get("description", "") for i in bill.get("items", []))
+    return {
+        "user":      normalize_text(bill.get("user_id")),
+        "patient":   normalize_text(bill.get("patient_name")),
+        "vendor":    normalize_text(bill.get("vendor_name") or bill.get("hospital_name")),
+        "date":      normalize_text(bill.get("bill_date") or ""),
+        "amount":    _safe_float(bill.get("total_billed")),
+        "currency":  normalize_text(bill.get("currency")),
+        "diagnosis": normalize_text(bill.get("diagnosis_text")),
+        "text":      normalize_text(ocr),
+        "items":     items_signature(bill)["text"],
+    }
+
+
+def duplicate_debug(new_bill: dict, old_bill: dict) -> dict:
+    n = core_signature(new_bill)
+    o = core_signature(old_bill)
+    return {
+        "same_user":     bool(n["user"]    and o["user"]    and n["user"]    == o["user"]),
+        "same_patient":  bool(n["patient"] and o["patient"] and n["patient"] == o["patient"]),
+        "same_vendor":   bool(n["vendor"]  and o["vendor"]  and n["vendor"]  == o["vendor"]),
+        "same_date":     bool(n["date"]    and o["date"]    and n["date"]    == o["date"]),
+        "same_amount":   bool(
+            n["amount"] is not None and o["amount"] is not None
+            and abs((n["amount"] or 0.0) - (o["amount"] or 0.0)) < 0.01
+        ),
+        "same_bill_id":  bool(
+            normalize_text(new_bill.get("bill_id"))
+            and normalize_text(new_bill.get("bill_id")) == normalize_text(old_bill.get("bill_id"))
+        ),
+        "text_similarity":      round(text_similarity(n["text"],  o["text"]),  4),
+        "items_similarity":     round(items_similarity(new_bill,  old_bill),   4),
+        "diagnosis_similarity": round(text_similarity(n["diagnosis"], o["diagnosis"]), 4),
+        "core_similarity":      round(text_similarity(
+            f"{n['patient']} {n['vendor']} {n['amount']} {n['currency']} {n['diagnosis']}",
+            f"{o['patient']} {o['vendor']} {o['amount']} {o['currency']} {o['diagnosis']}",
+        ), 4),
+        "new_core": n,
+        "old_core": o,
+    }
+
+
+def duplicate_reason(new_bill: dict, old_bill: dict) -> str | None:
+    d = duplicate_debug(new_bill, old_bill)
+    log("[duplicate_debug]", json.dumps(
+        {k: v for k, v in d.items() if k not in ("new_core", "old_core")},
+        ensure_ascii=False, indent=2,
+    ))
+    if d["same_bill_id"] and d["same_vendor"]:
+        return "same_bill_id_vendor"
+    same_pa = d["same_patient"] and d["same_amount"]
+    if same_pa and d["items_similarity"] >= 0.70:
+        return "same_patient_amount_high_items_similarity"
+    if same_pa and (d["text_similarity"] >= 0.75 or d["core_similarity"] >= 0.75):
+        return "same_patient_amount_high_similarity"
+    if same_pa:
+        return "same_patient_amount"
+    if d["text_similarity"] >= 0.90:
+        return "near_duplicate_high_text_similarity"
+    if d["items_similarity"] >= 0.90:
+        return "near_duplicate_high_items_similarity"
+    if d["same_amount"] and d["items_similarity"] >= 0.80 and d["text_similarity"] >= 0.70:
+        return "fallback_items_amount_text_match"
+    return None
+
+
+def is_duplicate_bill(new_bill: dict, existing_bills: list[dict]) -> bool:
+    for old in existing_bills:
+        reason = duplicate_reason(new_bill, old)
+        log("[is_duplicate_bill] reason =", reason)
+        if reason:
+            return True
+    return False
+
+
+def process_ocr_claim(text: str, diagnosis_code: str = None,
+                      existing_bills: list[dict] | None = None,
+                      user_id: str = None) -> dict:
+    existing_bills = existing_bills or []
+    bills = extract_itemized_bill(text, diagnosis_code)
+    if not bills:
+        return {"status": "empty", "bill": None, "duplicate": False, "reason": None}
+    bill = bills[0]
+    if not bill.get("ocr_text"):
+        bill["ocr_text"] = clean_ocr_text(text)
+    if user_id:
+        bill["user_id"] = user_id
+    
+    duplicate = is_duplicate_bill(bill, existing_bills)
+    reason = None
+    if duplicate:
+        for old in existing_bills:
+            reason = duplicate_reason(bill, old)
+            if reason:
+                break
+        return {"status": "duplicate", "bill": bill, "duplicate": True, "reason": reason}
+    
+    # === THÊM DÒNG NÀY: LƯU BILL VÀO DB SAU KHI XÁC ĐỊNH KHÔNG PHẢI DUPLICATE ===
+    if user_id:
+        if user_id not in user_bills_db:
+            user_bills_db[user_id] = []
+        user_bills_db[user_id].append(bill)
+    # ==========================================================================
+    
+    return {"status": "ok", "bill": bill, "duplicate": False, "reason": None}
+
+
+def debug_two_bills(text1: str, text2: str, diagnosis_code: str = None):
+    b1 = extract_itemized_bill(text1, diagnosis_code)
+    b2 = extract_itemized_bill(text2, diagnosis_code)
+    log("BILL 1 RAW"); log(json.dumps(b1[0], ensure_ascii=False, indent=2) if b1 else "EMPTY")
+    log("BILL 2 RAW"); log(json.dumps(b2[0], ensure_ascii=False, indent=2) if b2 else "EMPTY")
+    if not b1 or not b2:
+        return
+    log("BILL 1 CORE"); log(json.dumps(core_signature(b1[0]), ensure_ascii=False, indent=2))
+    log("BILL 2 CORE"); log(json.dumps(core_signature(b2[0]), ensure_ascii=False, indent=2))
+    dbg = duplicate_debug(b1[0], b2[0])
+    log("DUPLICATE DEBUG"); log(json.dumps(dbg, ensure_ascii=False, indent=2))
+    log("REASON"); log(duplicate_reason(b1[0], b2[0]))

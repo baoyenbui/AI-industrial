@@ -778,7 +778,7 @@ with right:
             }
             </style>
             <div class='subtitle-box'>
-                The extracted information may contain missing or incorrect details, so please review it carefully and complete any blank fields in the form.
+                The extracted information may contain missing or incorrect details, so please review all information carefully and complete any blank fields in the form.
             </div>
         """,
         unsafe_allow_html=True,
