@@ -1,4 +1,3 @@
-# app/services/ocr_service.py
 import io
 import re
 from PIL import Image
@@ -15,7 +14,6 @@ def ocr_image(file_bytes: bytes) -> str:
         return clean_text(text)
     except Exception:
         return ""
-
 
 def clean_text(t: str) -> str:
     if not t:

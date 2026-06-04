@@ -23,13 +23,6 @@ VALID_CATEGORIES = {
     "Imaging", "Consultation", "Surgery", "Supplies", "Others",
 }
 
-DEBUG_ENABLED = True
-
-
-def log(*args):
-    if DEBUG_ENABLED:
-        print(*args)
-
 
 def normalize_text_value(x) -> str:
     if x is None:
@@ -199,16 +192,12 @@ def dedupe_items(items: list[dict]) -> list[dict]:
 
 def extract_itemized_bill(text: str, diagnosis_code: str = None) -> list:
     if not text or not text.strip():
-        log("[extract_itemized_bill] empty text")
         return []
     cleaned = clean_ocr_text(text)
-    log("[extract_itemized_bill] cleaned_len =", len(cleaned))
     if len(cleaned) < 20:
-        log("[extract_itemized_bill] cleaned too short")
         return []
 
     regex_items = parse_items_with_regex(cleaned)
-    log("[extract_itemized_bill] regex_items_count =", len(regex_items))
 
     if regex_items:
         parsed = {
@@ -237,13 +226,6 @@ def extract_itemized_bill(text: str, diagnosis_code: str = None) -> list:
         if diagnosis_code:
             parsed["diagnosis_text"] = _map_icd_to_disease_text(diagnosis_code)
         parsed["total_billed"] = round(sum(i.get("total") or 0 for i in regex_items), 2)
-        log("[extract_itemized_bill] header_fields =", json.dumps(
-            {k: parsed.get(k) for k in [
-                "patient_name","vendor_name","hospital_name","bill_date","bill_id",
-                "diagnosis_text","total_billed","currency","ocr_quality",
-            ]} | {"items_count": len(parsed["items"])},
-            ensure_ascii=False, indent=2,
-        ))
         return [parsed]
 
     disease_context = _map_icd_to_disease_text(diagnosis_code) if diagnosis_code else "Unknown diagnosis"
@@ -283,7 +265,6 @@ OCR TEXT:
 {cleaned}"""
 
     try:
-        log("[extract_itemized_bill] prompt_preview =", prompt[:1600])
         res = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             temperature=0.0,
@@ -295,15 +276,11 @@ OCR TEXT:
             response_format={"type": "json_object"},
         )
         raw    = res.choices[0].message.content
-        log("[extract_itemized_bill] raw_response =", raw[:5000])
         parsed = json.loads(raw)
-        log("RAW PARSED JSON")
-        log(json.dumps(parsed, ensure_ascii=False, indent=2))
 
         items     = parsed.get("items", [])
         validated = [_validate_item(i) for i in items if _is_valid_item(i)]
         parsed["items"] = dedupe_items(validated)
-        log("[extract_itemized_bill] items_count_deduped =", len(parsed["items"]))
 
         for k in ["patient_name","vendor_name","hospital_name","bill_date","bill_id","diagnosis_text","currency"]:
             parsed[k] = normalize_text_value(parsed.get(k))
@@ -311,8 +288,7 @@ OCR TEXT:
         parsed["total_billed"] = _safe_float(parsed.get("total_billed"))
         parsed["ocr_text"]     = cleaned
         return [parsed]
-    except Exception as e:
-        log(f"[extract_itemized_bill] error: {e}")
+    except Exception:
         return []
 
 
@@ -384,63 +360,22 @@ def core_signature(bill: dict) -> dict:
     }
 
 
-def duplicate_debug(new_bill: dict, old_bill: dict) -> dict:
+def duplicate_reason(new_bill: dict, old_bill: dict) -> str | None:
     n = core_signature(new_bill)
     o = core_signature(old_bill)
-    return {
-        "same_user":     bool(n["user"]    and o["user"]    and n["user"]    == o["user"]),
-        "same_patient":  bool(n["patient"] and o["patient"] and n["patient"] == o["patient"]),
-        "same_vendor":   bool(n["vendor"]  and o["vendor"]  and n["vendor"]  == o["vendor"]),
-        "same_date":     bool(n["date"]    and o["date"]    and n["date"]    == o["date"]),
-        "same_amount":   bool(
-            n["amount"] is not None and o["amount"] is not None
-            and abs((n["amount"] or 0.0) - (o["amount"] or 0.0)) < 0.01
-        ),
-        "same_bill_id":  bool(
-            normalize_text(new_bill.get("bill_id"))
-            and normalize_text(new_bill.get("bill_id")) == normalize_text(old_bill.get("bill_id"))
-        ),
-        "text_similarity":      round(text_similarity(n["text"],  o["text"]),  4),
-        "items_similarity":     round(items_similarity(new_bill,  old_bill),   4),
-        "diagnosis_similarity": round(text_similarity(n["diagnosis"], o["diagnosis"]), 4),
-        "core_similarity":      round(text_similarity(
-            f"{n['patient']} {n['vendor']} {n['amount']} {n['currency']} {n['diagnosis']}",
-            f"{o['patient']} {o['vendor']} {o['amount']} {o['currency']} {o['diagnosis']}",
-        ), 4),
-        "new_core": n,
-        "old_core": o,
-    }
-
-
-def duplicate_reason(new_bill: dict, old_bill: dict) -> str | None:
-    d = duplicate_debug(new_bill, old_bill)
-    log("[duplicate_debug]", json.dumps(
-        {k: v for k, v in d.items() if k not in ("new_core", "old_core")},
-        ensure_ascii=False, indent=2,
-    ))
-    if d["same_bill_id"] and d["same_vendor"]:
+    if normalize_text(new_bill.get("bill_id")) and normalize_text(new_bill.get("bill_id")) == normalize_text(old_bill.get("bill_id")) and n["vendor"] == o["vendor"]:
         return "same_bill_id_vendor"
-    same_pa = d["same_patient"] and d["same_amount"]
-    if same_pa and d["items_similarity"] >= 0.70:
+    same_pa = n["patient"] and o["patient"] and n["patient"] == o["patient"] and n["amount"] is not None and o["amount"] is not None and abs((n["amount"] or 0.0) - (o["amount"] or 0.0)) < 0.01
+    if same_pa and items_similarity(new_bill, old_bill) >= 0.70:
         return "same_patient_amount_high_items_similarity"
-    if same_pa and (d["text_similarity"] >= 0.75 or d["core_similarity"] >= 0.75):
+    if same_pa and (text_similarity(n["text"], o["text"]) >= 0.75):
         return "same_patient_amount_high_similarity"
-    if same_pa:
-        return "same_patient_amount"
-    if d["text_similarity"] >= 0.90:
-        return "near_duplicate_high_text_similarity"
-    if d["items_similarity"] >= 0.90:
-        return "near_duplicate_high_items_similarity"
-    if d["same_amount"] and d["items_similarity"] >= 0.80 and d["text_similarity"] >= 0.70:
-        return "fallback_items_amount_text_match"
     return None
 
 
 def is_duplicate_bill(new_bill: dict, existing_bills: list[dict]) -> bool:
     for old in existing_bills:
-        reason = duplicate_reason(new_bill, old)
-        log("[is_duplicate_bill] reason =", reason)
-        if reason:
+        if duplicate_reason(new_bill, old):
             return True
     return False
 
@@ -474,16 +409,3 @@ def process_ocr_claim(text: str, diagnosis_code: str = None,
     
     return {"status": "ok", "bill": bill, "duplicate": False, "reason": None}
 
-
-def debug_two_bills(text1: str, text2: str, diagnosis_code: str = None):
-    b1 = extract_itemized_bill(text1, diagnosis_code)
-    b2 = extract_itemized_bill(text2, diagnosis_code)
-    log("BILL 1 RAW"); log(json.dumps(b1[0], ensure_ascii=False, indent=2) if b1 else "EMPTY")
-    log("BILL 2 RAW"); log(json.dumps(b2[0], ensure_ascii=False, indent=2) if b2 else "EMPTY")
-    if not b1 or not b2:
-        return
-    log("BILL 1 CORE"); log(json.dumps(core_signature(b1[0]), ensure_ascii=False, indent=2))
-    log("BILL 2 CORE"); log(json.dumps(core_signature(b2[0]), ensure_ascii=False, indent=2))
-    dbg = duplicate_debug(b1[0], b2[0])
-    log("DUPLICATE DEBUG"); log(json.dumps(dbg, ensure_ascii=False, indent=2))
-    log("REASON"); log(duplicate_reason(b1[0], b2[0]))

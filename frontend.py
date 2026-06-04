@@ -7,13 +7,10 @@ import unicodedata
 from datetime import datetime, date
 import time
 
-
 API_URL = "http://127.0.0.1:8000/predict"
 OCR_API_URL = "http://127.0.0.1:8000/ocr-claim"
 
-
 st.set_page_config(page_title="Health Claim AI", layout="wide")
-
 
 st.markdown("""
 <style>
@@ -66,7 +63,6 @@ div[data-testid="stNumberInput"] > div > div {
 div[data-testid="stNumberInput"] input { background:white !important; border:none !important; color:black !important; }
 div[data-testid="stNumberInput"] button { background:white !important; border-left:1px solid #B0B0B0 !important; }
 input::placeholder, textarea::placeholder { color:rgba(0,0,0,0.35) !important; }
-
 
 .fl-wrap {
     display: flex;
@@ -127,7 +123,6 @@ input::placeholder, textarea::placeholder { color:rgba(0,0,0,0.35) !important; }
 }
 .tip-icon:hover .tip-box { display: block; }
 
-
 .result-panel {
     border-radius: 12px;
     padding: 24px;
@@ -158,6 +153,7 @@ st.markdown(
 
 st.markdown("<h1 style='margin-bottom:10px;'>Health Claim Support System</h1>", unsafe_allow_html=True)
 
+
 def clean_text(x):
     if x is None:
         return ""
@@ -165,17 +161,20 @@ def clean_text(x):
     x = re.sub(r"[\u200b-\u200f\ufeff\u00a0\x00-\x1f\x7f]", "", x)
     return re.sub(r"\s+", " ", x).strip()
 
+
 def safe_int(x):
     try:
         return int(re.search(r"\d+", str(x)).group())
     except:
         return 0
 
+
 def safe_float(x):
     try:
         return float(str(x).replace(",", "."))
     except:
         return 0.0
+
 
 def normalize_gender(x):
     xl = clean_text(x).lower()
@@ -185,10 +184,12 @@ def normalize_gender(x):
         return "Male"
     return ""
 
+
 def _is_blank(v, min_len=1):
     if v is None:
         return True
     return str(v).strip() == "" or len(str(v).strip()) < min_len
+
 
 def merge_ocr_results(results):
     SUM, FIRST = {"ClaimAmount", "PatientIncome"}, {"PatientAge"}
@@ -206,6 +207,7 @@ def merge_ocr_results(results):
                 if not clean_text(merged.get(k, "")) and clean_text(v):
                     merged[k] = clean_text(v)
     return merged
+
 
 DEFAULTS = {
     "patient_age": 0,
@@ -226,12 +228,16 @@ DEFAULTS = {
     "pre_auth_status": "Choose an option",
     "error_fields": [],
     "_api_result": None,
+    "_ocr_result": None,
     "_uploaded_images": [],
 }
+
 def initialize_session_state():
     for k, v in DEFAULTS.items():
         st.session_state.setdefault(k, v)
+
 initialize_session_state()
+
 
 def validate():
     s, e = st.session_state, []
@@ -263,6 +269,7 @@ def validate():
         e.append("Policy Number / Member ID")
     return e
 
+
 def fl(label, tip, hl):
     is_err = label in hl
     text_cls = "err" if is_err else "ok"
@@ -275,6 +282,7 @@ def fl(label, tip, hl):
         f"</div>",
         unsafe_allow_html=True,
     )
+
 
 def reset_claim_form():
     defaults = {
@@ -296,12 +304,13 @@ def reset_claim_form():
         "claim_amount": 0.0,
         "error_fields": [],
         "_api_result": None,
+        "_ocr_result": None,
         "_uploaded_images": [],
     }
 
     for k, v in defaults.items():
         st.session_state[k] = v
-    
+
 def render_result(r):
     decision = r.get("decision", "Pending")
     reimb = r.get("reimbursement_amount") or 0.0
@@ -326,7 +335,7 @@ def render_result(r):
     full_html = f"""
     <div class='result-panel {cls}'>
         <div class='result-title'>Claim {decision}</div>
-        
+
         <div class='result-row'>
             <div class='result-kv'>
                 <span class='result-kv-label'>Reimbursement</span>
@@ -343,7 +352,7 @@ def render_result(r):
         </div>
 
         <div class='result-meta'>{meta}</div>
-        
+
         <div class='result-explanation'>
             {expl}
         </div>
@@ -356,46 +365,46 @@ def render_result(r):
 
     <style>
         .result-panel {{
-            border-radius: 12px !important; 
-            padding: 24px !important; 
-            margin: 20px 0 !important; 
+            border-radius: 12px !important;
+            padding: 24px !important;
+            margin: 20px 0 !important;
             border: 1px solid #ddd !important;
             background: white;
         }}
-        
+
         .result-approved {{
-            background: #d4edda !important;     
+            background: #d4edda !important;
             border-color: #d4edda !important;
         }}
-        
+
         .result-denied {{
             background: #fef2f2 !important;
             border-color: #f87171 !important;
         }}
-        
+
         .result-pending {{
             background: #fffbeb !important;
             border-color: #fbbf24 !important;
         }}
 
         .result-title {{
-            font-size:25px; 
-            font-weight:700; 
+            font-size:25px;
+            font-weight:700;
             margin-bottom:18px;
         }}
         .result-approved .result-title {{ color:#166534; }}
 
-        .result-row      {{ display:flex; gap:32px; margin:16px 0; flex-wrap:wrap; }}
+        .result-row     {{ display:flex; gap:32px; margin:16px 0; flex-wrap:wrap; }}
         .result-kv       {{ display:flex; flex-direction:column; }}
         .result-kv-label {{ font-size:11px; color:#666; text-transform:uppercase; }}
         .result-kv-value {{ font-size:21px; font-weight:700; }}
         .result-meta     {{ font-size:13.5px; color:#444; margin:12px 0 20px; }}
 
-        .result-explanation {{ 
-            background:#fafafa; 
-            padding:26px; 
-            border-radius:12px; 
-            border:1px solid #e5e5e5; 
+        .result-explanation {{
+            background:#fafafa;
+            padding:26px;
+            border-radius:12px;
+            border:1px solid #e5e5e5;
         }}
 
         .iais-note {{
@@ -436,28 +445,28 @@ def render_result(r):
         .exp-headline {{ font-size:18.5px; font-weight:700; margin-bottom:10px; }}
         .exp-sub {{ color:#555; margin-bottom:22px; }}
 
-        .exp-amounts, .exp-section {{ 
-            margin-bottom:24px; 
-            padding:20px; 
-            background:white; 
-            border-radius:10px; 
+        .exp-amounts, .exp-section {{
+            margin-bottom:24px;
+            padding:20px;
+            background:white;
+            border-radius:10px;
             border:1px solid #eee;
         }}
         .exp-section-title {{
-            font-size:16px; 
-            font-weight:600; 
-            margin-bottom:16px; 
+            font-size:16px;
+            font-weight:600;
+            margin-bottom:16px;
             color:#1a3c5e;
             border-bottom:1px solid #eee;
             padding-bottom:12px;
         }}
         .exp-amount-row {{
-            display:flex; 
-            justify-content:space-between; 
-            padding:12px 0; 
+            display:flex;
+            justify-content:space-between;
+            padding:12px 0;
             border-bottom:1px solid #f0f0f0;
         }}
-        
+
         .exp-amount-row:last-child {{ border-bottom:none; }}
         .exp-amount-row.covered {{ color:#1a7a3e; font-weight:600; }}
         .exp-amount-row.owe {{ color:#b91c1c; font-weight:600; }}
@@ -593,7 +602,7 @@ def render_result(r):
             padding-right: 12px;
             line-height: 1.4;
         }}
-        
+
         .exp-badge {{
             padding: 6px 14px;
             border-radius: 20px;
@@ -601,12 +610,12 @@ def render_result(r):
             font-weight: 600;
             white-space: nowrap;
         }}
-        
+
         .exp-badge-favorable {{
             background: #d4edda;
             color: #155724;
         }}
-        
+
         .exp-badge-reviewed {{
             background: #fff3cd;
             color: #856404;
@@ -621,7 +630,6 @@ def render_result(r):
     """
 
     st.components.v1.html(full_html, height=1150, scrolling=True)
-
 
 left, right = st.columns([1, 1.2])
 
@@ -641,13 +649,24 @@ with left:
                 background: #f8f9fa;
                 border-left: 4px solid #667eea;
                 padding: 16px 20px;
-                margin: 0 0 30px 0;
+                margin: 0 0 18px 0;
                 border-radius: 8px;
                 font-style: italic;
                 font-size: 14.5px;
                 line-height: 1.6;
                 color: #555555;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            }
+            .ocr-warning-box {
+                background: #fff7cc;
+                color: black;
+                padding: 12px 14px;
+                margin: 12px 0 14px 0;
+                border: 1px solid #f59e0b;
+                border-radius: 10px;
+                font-size: 13px;
+                line-height: 1.5;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.06);
             }
             </style>
             <div class='subtitle-box'>
@@ -679,6 +698,7 @@ with left:
             f"<div style='text-align:center;font-size:13px;color:#555;margin:12px 0 16px;'>{n} image{'s' if n > 1 else ''} selected</div>",
             unsafe_allow_html=True,
         )
+
         cols = st.columns(min(n, 5))
         for idx, img_info in enumerate(images_data):
             with cols[idx % min(n, 5)]:
@@ -686,7 +706,7 @@ with left:
                     img = Image.open(io.BytesIO(img_info["bytes"]))
                     h = int(thumb_width * img.height / img.width)
                     st.image(img.resize((thumb_width, h), Image.LANCZOS), width=thumb_width, caption=img_info["name"][:14])
-                except:
+                except Exception:
                     st.error(f"Cannot load {img_info['name']}")
 
         _, mid, _ = st.columns([1, 2, 1])
@@ -694,21 +714,21 @@ with left:
             run_ocr = st.button(f"Run OCR ({n} image{'s' if n > 1 else ''})", use_container_width=True)
 
         if run_ocr:
-            extracted, errs = [], []
-            bar = st.progress(0, text="Running OCR…")
+            extracted, ocr_result = [], None
+            bar = st.progress(0, text="Running OCR...")
+
             for i, img_info in enumerate(images_data):
-                bar.progress(i / n, text=f"Processing {img_info['name']} ({i+1}/{n})…")
+                bar.progress(i / n, text=f"Processing {img_info['name']} ({i+1}/{n})...")
                 try:
                     r = requests.post(OCR_API_URL, files={"file": (img_info["name"], img_info["bytes"])}, timeout=30)
                     if r.status_code == 200:
-                        extracted.append(r.json().get("extracted_data", {}))
-                    else:
-                        errs.append(f"{img_info['name']}: HTTP {r.status_code}")
-                except Exception as ex:
-                    errs.append(f"{img_info['name']}: {ex}")
+                        data = r.json()
+                        extracted.append(data.get("extracted_data", {}))
+                        ocr_result = data
+                except Exception:
+                    pass
+
             bar.progress(1.0, text="Done!")
-            for err in errs:
-                st.warning(f"OCR error — {err}")
 
             if extracted:
                 m = merge_ocr_results(extracted)
@@ -728,21 +748,47 @@ with left:
                     "policy_number": clean_text(m.get("PolicyNumber")),
                     "provider_name": clean_text(m.get("ProviderName")),
                 })
+
                 pre = clean_text(m.get("PreAuthorizationStatus"))
                 if pre in ("Yes", "No"):
                     st.session_state["pre_auth_status"] = pre
+
                 date_str = m.get("DateOfService")
                 if date_str:
                     for fmt in ("%d %B %Y", "%B %d %Y", "%d/%m/%Y", "%m/%d/%Y", "%Y-%m-%d", "%d-%m-%Y"):
                         try:
                             st.session_state["date_of_service"] = datetime.strptime(str(date_str).strip(), fmt).date()
                             break
-                        except:
+                        except Exception:
                             continue
-                st.session_state["error_fields"] = []
-                st.session_state["_api_result"] = None
+
+                filled_fields = [
+                    safe_int(m.get("PatientAge")) > 0,
+                    bool(clean_text(m.get("PatientGender"))),
+                    safe_float(m.get("ClaimAmount")) > 0,
+                    bool(clean_text(m.get("DiagnosisCode"))),
+                    bool(clean_text(m.get("ProviderName"))),
+                    bool(clean_text(m.get("PatientEmploymentStatus"))),
+                    bool(clean_text(m.get("PolicyNumber"))),
+                ]
+
+                if not any(filled_fields):
+                    st.session_state["_ocr_empty_warning"] = True
+                else:
+                    st.session_state["_ocr_empty_warning"] = False
+
                 time.sleep(0.1)
                 st.rerun()
+
+        if st.session_state.get("_ocr_empty_warning"):
+            st.markdown(
+                """
+                <div class="ocr-warning-box">
+                    ⚠ Nofields were filled from OCR. Please check the image quality or enter the data manually.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
     else:
         st.markdown(
             "<div style='text-align:center;color:#888;font-size:14.5px;margin:50px 0;'><em>No images uploaded yet.</em></div>",
@@ -750,8 +796,7 @@ with left:
         )
 
     st.markdown("</div>", unsafe_allow_html=True)
-    
-    
+
 with right:
     st.markdown(
         """
