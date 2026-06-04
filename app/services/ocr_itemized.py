@@ -467,12 +467,10 @@ def process_ocr_claim(text: str, diagnosis_code: str = None,
                 break
         return {"status": "duplicate", "bill": bill, "duplicate": True, "reason": reason}
     
-    # === THÊM DÒNG NÀY: LƯU BILL VÀO DB SAU KHI XÁC ĐỊNH KHÔNG PHẢI DUPLICATE ===
     if user_id:
         if user_id not in user_bills_db:
             user_bills_db[user_id] = []
         user_bills_db[user_id].append(bill)
-    # ==========================================================================
     
     return {"status": "ok", "bill": bill, "duplicate": False, "reason": None}
 

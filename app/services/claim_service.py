@@ -8,9 +8,9 @@ from dotenv import load_dotenv
 from ..utils import safe_float, safe_int, safe_json, parse_query
 from .extraction_service import extract_claim_data
 from .ocr_itemized import (
-    extract_itemized_bill,  
+    extract_itemized_bill, 
     process_ocr_claim,     
-    user_bills_db,          
+    user_bills_db,           
     _map_icd_to_disease_text,
 )
 from .rag_service import vector_search, build_rag_context
@@ -410,12 +410,10 @@ def _build_human_explanation(data: dict, breakdown: dict, decision: str, final_a
     <div class="exp-headline">{escape(e["subheadline"])}</div>
   </div>
 
-
   <div class="exp-section exp-section-overview">
     <div class="exp-section-title">What this means</div>
     <ul class="exp-list">{_format_li(e["summary_items"])}</ul>
   </div>
-
 
   <div class="exp-section">
     <div class="exp-section-title">How we worked this out</div>
@@ -442,7 +440,6 @@ def _build_human_explanation(data: dict, breakdown: dict, decision: str, final_a
       </div>
     </div>
   </div>
-
 
   <div class="exp-section">
     <div class="exp-section-title">Why this result</div>
@@ -638,12 +635,41 @@ def _save_claim(db_claims, data: dict, decision_result: dict, raw_ocr_text: str 
 
 
 def process_claim(file_bytes: bytes = None, form_data: dict = None, db_knowledge=None, db_claims=None) -> dict:
-    text = file_bytes.decode("utf-8", errors="ignore") if file_bytes else ""
     user_id = form_data.get("user_id") if form_data else "default_user"
     diagnosis_code = form_data.get("diagnosis_code") if form_data else None
-    
-    existing_bills = user_bills_db.get(user_id, [])
-    
+
+    raw_text = ""
+    if file_bytes:
+        from .ocr_service import ocr_image, clean_text
+        try:
+            if file_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+                ocr_text = ocr_image(file_bytes)
+                raw_text = clean_text(ocr_text) if ocr_text else ""
+            elif file_bytes[:2] == b'\xff\xd8':
+                ocr_text = ocr_image(file_bytes)
+                raw_text = clean_text(ocr_text) if ocr_text else ""
+            else:
+                raw_text = file_bytes.decode("utf-8", errors="ignore")[:8000]
+        except Exception:
+            try:
+                raw_text = file_bytes.decode("utf-8", errors="ignore")[:8000]
+            except Exception:
+                raw_text = ""
+
+    existing_bills = []
+    try:
+        if db_claims:
+            rows = db_claims.execute("SELECT extracted_data FROM claims WHERE user_id = ? AND extracted_data IS NOT NULL ORDER BY created_at DESC LIMIT 50", (user_id,)).fetchall()
+            for r in rows:
+                try:
+                    existing_bills.append(json.loads(r[0]) if isinstance(r[0], str) else r[0])
+                except Exception:
+                    continue
+        else:
+            existing_bills = user_bills_db.get(user_id, [])
+    except Exception:
+        existing_bills = user_bills_db.get(user_id, [])
+
     bill_from_form = {
         "user_id": user_id,
         "patient_name": form_data.get("PatientName") if form_data else None,
@@ -655,23 +681,23 @@ def process_claim(file_bytes: bytes = None, form_data: dict = None, db_knowledge
         "bill_date": form_data.get("DateOfService") if form_data else None,
         "bill_id": form_data.get("PolicyNumber") if form_data else None,
         "diagnosis_text": _map_icd_to_disease_text(diagnosis_code) if diagnosis_code else None,
-        "ocr_text": text[:8000],
-        "items": [], 
+        "ocr_text": raw_text[:8000],
+        "items": [],
     }
-    
+
     from .ocr_itemized import parse_items_with_regex, dedupe_items
-    regex_items = parse_items_with_regex(text)
+    regex_items = parse_items_with_regex(raw_text)
     if regex_items:
         bill_from_form["items"] = dedupe_items(regex_items)
         bill_from_form["total_billed"] = round(sum(i.get("total") or 0 for i in regex_items), 2)
-    
+
     ocr_result = process_ocr_claim(
-        text=text,
+        text=raw_text,
         diagnosis_code=diagnosis_code,
         existing_bills=existing_bills,
         user_id=user_id
     )
-    
+
     if ocr_result["status"] == "duplicate":
         return {
             "status": "duplicate",
@@ -699,7 +725,7 @@ def process_claim(file_bytes: bytes = None, form_data: dict = None, db_knowledge
                         "total_amount_in_db": sum(b.get('total_billed', 0) for b in existing_bills),
                         "existing_bills_count": len(existing_bills),
                     }
-    
+
     if ocr_result["status"] == "empty":
         return {
             "status": "empty",
@@ -708,34 +734,32 @@ def process_claim(file_bytes: bytes = None, form_data: dict = None, db_knowledge
             "items_count": len(bill_from_form.get("items", [])),
             "total_amount_in_db": sum(b.get('total_billed', 0) for b in existing_bills),
         }
-    
+
     bill = ocr_result["bill"]
-    
-    raw_text = ""
-    if file_bytes:
-        from .ocr_service import ocr_image, clean_text
+
+    extracted_data = {}
+    if raw_text:
         try:
-            if file_bytes[:8] == b'\x89PNG\r\n\x1a\n':
-                ocr_text = ocr_image(file_bytes)
-                raw_text = clean_text(ocr_text) if ocr_text else ""
-            elif file_bytes[:2] == b'\xff\xd8':
-                ocr_text = ocr_image(file_bytes)
-                raw_text = clean_text(ocr_text) if ocr_text else ""
-            else:
-                raw_text = file_bytes.decode("utf-8", errors="ignore")[:8000]
+            extracted_data = extract_claim_data(raw_text) or {}
         except Exception:
-            raw_text = file_bytes.decode("utf-8", errors="ignore")[:8000]
-    
-    extracted_data = extract_claim_data(raw_text) if raw_text else {}
-    merged_data = form_data if form_data else {}
+            extracted_data = {}
+    merged_data = form_data.copy() if form_data else {}
     if extracted_data:
         for k, v in extracted_data.items():
             if k not in merged_data and v and str(v).strip():
                 merged_data[k] = v
+
+    if regex_items and bill_from_form.get("total_billed"):
+        merged_data["ClaimAmount"] = bill_from_form["total_billed"]
+        merged_data["claim_amount"] = bill_from_form["total_billed"]
+
     parsed = parse_query(merged_data)
     claim_amount = _get_amount(parsed, merged_data)
+    if claim_amount <= 0:
+        claim_amount = 60.0
     data = _build_data(parsed, claim_amount, merged_data)
     diagnosis_code = data.get("diagnosis_code") or merged_data.get("DiagnosisCode") or merged_data.get("diagnosis_code") or "Z00.00"
+
     items = []
     saved_count = 0
     if raw_text:
@@ -745,6 +769,7 @@ def process_claim(file_bytes: bytes = None, form_data: dict = None, db_knowledge
                 _, action = upsert_knowledge_item(db_knowledge, item, diagnosis_code, "ocr_extracted")
                 if action in ("created", "updated"):
                     saved_count += 1
+
     similar = vector_search(db_knowledge, str(items or merged_data), diagnosis_code) if db_knowledge and items else []
     rag_context = build_rag_context(items, similar)
     fraud_result = predict_fraud(data)
