@@ -192,13 +192,18 @@ def _is_blank(v, min_len=1):
 
 
 def merge_ocr_results(results):
-    SUM, FIRST = {"ClaimAmount", "PatientIncome"}, {"PatientAge"}
+    sum_keys = {"ClaimAmount", "PatientIncome"}
+    first_keys = {"PatientAge"}
     merged = {}
     for data in results:
+        if not isinstance(data, dict):
+            continue
         for k, v in data.items():
-            if k in SUM:
+            if v is None:
+                continue
+            if k in sum_keys:
                 merged[k] = merged.get(k, 0.0) + safe_float(v)
-            elif k in FIRST:
+            elif k in first_keys:
                 if not merged.get(k):
                     n = safe_int(v)
                     if n:
@@ -318,6 +323,10 @@ def render_result(r):
     conf = r.get("confidence") or 0.0
     expl = r.get("explanation", "")
 
+    if conf > 1:
+        conf = conf / 100.0
+    conf = max(0.0, min(1.0, conf))
+
     cls = {"Approved": "result-approved", "Denied": "result-denied"}.get(decision, "result-pending")
 
     meta_parts = []
@@ -394,11 +403,34 @@ def render_result(r):
         }}
         .result-approved .result-title {{ color:#166534; }}
 
-        .result-row     {{ display:flex; gap:32px; margin:16px 0; flex-wrap:wrap; }}
-        .result-kv       {{ display:flex; flex-direction:column; }}
-        .result-kv-label {{ font-size:11px; color:#666; text-transform:uppercase; }}
-        .result-kv-value {{ font-size:21px; font-weight:700; }}
-        .result-meta     {{ font-size:13.5px; color:#444; margin:12px 0 20px; }}
+        .result-row {{
+            display:flex;
+            gap:32px;
+            margin:16px 0;
+            flex-wrap:wrap;
+        }}
+
+        .result-kv {{
+            display:flex;
+            flex-direction:column;
+        }}
+
+        .result-kv-label {{
+            font-size:11px;
+            color:#666;
+            text-transform:uppercase;
+        }}
+
+        .result-kv-value {{
+            font-size:21px;
+            font-weight:700;
+        }}
+
+        .result-meta {{
+            font-size:13.5px;
+            color:#444;
+            margin:12px 0 20px;
+        }}
 
         .result-explanation {{
             background:#fafafa;
@@ -419,6 +451,7 @@ def render_result(r):
             align-items: center;
             gap: 10px;
         }}
+
         .iais-note .info-icon {{
             display: inline-flex;
             align-items: center;
@@ -432,10 +465,12 @@ def render_result(r):
             border-radius: 50%;
             flex-shrink: 0;
         }}
+
         .iais-note a {{
             color: #1e40af;
             text-decoration: underline;
         }}
+
         .iais-note a:hover {{
             color: #1e3a8a;
         }}
@@ -452,6 +487,7 @@ def render_result(r):
             border-radius:10px;
             border:1px solid #eee;
         }}
+
         .exp-section-title {{
             font-size:16px;
             font-weight:600;
@@ -460,6 +496,7 @@ def render_result(r):
             border-bottom:1px solid #eee;
             padding-bottom:12px;
         }}
+
         .exp-amount-row {{
             display:flex;
             justify-content:space-between;
@@ -467,170 +504,182 @@ def render_result(r):
             border-bottom:1px solid #f0f0f0;
         }}
 
-        .exp-amount-row:last-child {{ border-bottom:none; }}
-        .exp-amount-row.covered {{ color:#1a7a3e; font-weight:600; }}
-        .exp-amount-row.owe {{ color:#b91c1c; font-weight:600; }}
+        .exp-amount-row:last-child {{
+            border-bottom:none;
+        }}
+
+        .exp-amount-row.covered {{
+            color:#1a7a3e;
+            font-weight:600;
+        }}
+
+        .exp-amount-row.owe {{
+            color:#b91c1c;
+            font-weight:600;
+        }}
 
         .exp-calc-table {{
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
-            max-width: 100%;
-            margin: 16px 0;
+            background:#f8f9fa;
+            border-radius:8px;
+            padding:20px;
+            max-width:100%;
+            margin:16px 0;
         }}
 
         .exp-calc-row {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid #e0e0e0;
-            font-size: 15px;
-            line-height: 1.4;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            padding:12px 0;
+            border-bottom:1px solid #e0e0e0;
+            font-size:15px;
+            line-height:1.4;
         }}
 
         .exp-calc-row:last-child {{
-            border-bottom: none;
+            border-bottom:none;
         }}
 
         .exp-calc-header {{
-            font-weight: 700;
-            font-size: 16px;
-            color: #333;
-            padding-bottom: 14px;
-            border-bottom: 2px solid #ddd;
-            margin-bottom: 4px;
+            font-weight:700;
+            font-size:16px;
+            color:#333;
+            padding-bottom:14px;
+            border-bottom:2px solid #ddd;
+            margin-bottom:4px;
         }}
 
         .exp-calc-subtle {{
-            color: #555;
+            color:#555;
         }}
 
         .exp-calc-deduction {{
-            color: #d32f2f;
+            color:#d32f2f;
         }}
 
         .exp-calc-divider {{
-            font-weight: 600;
-            color: #333;
-            border-top: 2px solid #ddd;
-            padding-top: 14px;
-            margin-top: 6px;
+            font-weight:600;
+            color:#333;
+            border-top:2px solid #ddd;
+            padding-top:14px;
+            margin-top:6px;
         }}
 
         .exp-calc-total {{
-            font-weight: 700;
-            font-size: 17px;
-            color: #2e7d32;
-            background: #e8f5e9;
-            padding: 14px;
-            border-radius: 6px;
-            margin-top: 10px;
-            border: none;
+            font-weight:700;
+            font-size:17px;
+            color:#2e7d32;
+            background:#e8f5e9;
+            padding:14px;
+            border-radius:6px;
+            margin-top:10px;
+            border:none;
         }}
 
         .exp-calc-label {{
-            flex: 1;
-            padding-right: 12px;
-            color: #444;
-            font-weight: 400;
+            flex:1;
+            padding-right:12px;
+            color:#444;
+            font-weight:400;
         }}
 
         .exp-calc-value {{
-            font-weight: 700;
-            color: #222;
-            white-space: nowrap;
-            text-align: right;
-            min-width: 100px;
+            font-weight:700;
+            color:#222;
+            white-space:nowrap;
+            text-align:right;
+            min-width:100px;
         }}
 
         .exp-explanation-box {{
-            background: #fff8e1;
-            border-left: 4px solid #ffc107;
-            padding: 16px;
-            margin-top: 12px;
-            border-radius: 4px;
-            font-size: 0.95em;
-            line-height: 1.6;
+            background:#fff8e1;
+            border-left:4px solid #ffc107;
+            padding:16px;
+            margin-top:12px;
+            border-radius:4px;
+            font-size:0.95em;
+            line-height:1.6;
         }}
 
         .exp-explanation-box p {{
-            margin: 8px 0;
+            margin:8px 0;
         }}
 
         .exp-explanation-box p:first-child {{
-            margin-top: 0;
+            margin-top:0;
         }}
 
         .exp-explanation-box p:last-child {{
-            margin-bottom: 0;
+            margin-bottom:0;
         }}
 
         .exp-adjustment-list {{
-            margin: 10px 0;
-            padding-left: 20px;
+            margin:10px 0;
+            padding-left:20px;
         }}
 
         .exp-adjustment-list li {{
-            margin: 6px 0;
+            margin:6px 0;
         }}
 
         .exp-note {{
-            background: #e3f2fd;
-            padding: 10px;
-            border-radius: 4px;
-            margin-top: 10px;
-            font-weight: 500;
+            background:#e3f2fd;
+            padding:10px;
+            border-radius:4px;
+            margin-top:10px;
+            font-weight:500;
         }}
 
         .exp-note strong {{
-            color: #1976d2;
+            color:#1976d2;
         }}
 
         .exp-factor-row {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid #f0f0f0;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            padding:12px 0;
+            border-bottom:1px solid #f0f0f0;
         }}
+
         .exp-factor-row:last-child {{
-            border-bottom: none;
+            border-bottom:none;
         }}
+
         .exp-factor-label {{
-            flex: 1;
-            padding-right: 12px;
-            line-height: 1.4;
+            flex:1;
+            padding-right:12px;
+            line-height:1.4;
         }}
 
         .exp-badge {{
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 600;
-            white-space: nowrap;
+            padding:6px 14px;
+            border-radius:20px;
+            font-size:13px;
+            font-weight:600;
+            white-space:nowrap;
         }}
 
         .exp-badge-favorable {{
-            background: #d4edda;
-            color: #155724;
+            background:#d4edda;
+            color:#155724;
         }}
 
         .exp-badge-reviewed {{
-            background: #fff3cd;
-            color: #856404;
+            background:#fff3cd;
+            color:#856404;
         }}
 
         .exp-knowledge-text {{
-            font-size: 0.95em;
-            color: #555;
-            line-height: 1.6;
+            font-size:0.95em;
+            color:#555;
+            line-height:1.6;
         }}
     </style>
     """
 
     st.components.v1.html(full_html, height=1150, scrolling=True)
-
+    
 left, right = st.columns([1, 1.2])
 
 with left:
@@ -714,29 +763,37 @@ with left:
             run_ocr = st.button(f"Run OCR ({n} image{'s' if n > 1 else ''})", use_container_width=True)
 
         if run_ocr:
-            extracted, ocr_result = [], None
+            extracted = []
             bar = st.progress(0, text="Running OCR...")
 
             for i, img_info in enumerate(images_data):
-                bar.progress(i / n, text=f"Processing {img_info['name']} ({i+1}/{n})...")
+                bar.progress((i + 1) / n, text=f"Processing {img_info['name']} ({i+1}/{n})...")
                 try:
-                    r = requests.post(OCR_API_URL, files={"file": (img_info["name"], img_info["bytes"])}, timeout=30)
+                    r = requests.post(
+                        OCR_API_URL,
+                        files={"file": (img_info["name"], img_info["bytes"])},
+                        timeout=30
+                    )
                     if r.status_code == 200:
                         data = r.json()
                         extracted.append(data.get("extracted_data", {}))
-                        ocr_result = data
-                except Exception:
-                    pass
+                except Exception as e:
+                    st.error(f"OCR error: {e}")
 
             bar.progress(1.0, text="Done!")
 
             if extracted:
                 m = merge_ocr_results(extracted)
+
                 st.session_state.update({
                     "patient_age": safe_int(m.get("PatientAge")),
-                    "patient_gender": normalize_gender(m.get("PatientGender")) or "Choose the gender",
+                    "patient_gender": normalize_gender(
+                        m.get("PatientGender") or m.get("Gender")
+                    ) or "Choose the gender",
                     "patient_income": safe_float(m.get("PatientIncome")),
-                    "patient_employment": clean_text(m.get("PatientEmploymentStatus")),
+                    "patient_employment": clean_text(
+                        m.get("PatientEmploymentStatus") or m.get("EmploymentStatus")
+                    ),
                     "patient_marital": clean_text(m.get("PatientMaritalStatus")),
                     "provider_specialty": clean_text(m.get("ProviderSpecialty")),
                     "claim_type": clean_text(m.get("ClaimType")),
@@ -746,7 +803,9 @@ with left:
                     "claim_status": clean_text(m.get("ClaimStatus")),
                     "claim_amount": safe_float(m.get("ClaimAmount")),
                     "policy_number": clean_text(m.get("PolicyNumber")),
-                    "provider_name": clean_text(m.get("ProviderName")),
+                    "provider_name": clean_text(
+                        m.get("ProviderName") or m.get("HospitalName") or m.get("provider_name")
+                    ),
                 })
 
                 pre = clean_text(m.get("PreAuthorizationStatus"))
@@ -755,36 +814,32 @@ with left:
 
                 date_str = m.get("DateOfService")
                 if date_str:
-                    for fmt in ("%d %B %Y", "%B %d %Y", "%d/%m/%Y", "%m/%d/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+                    for fmt in ("%d %B %Y", "%B %d %Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
                         try:
-                            st.session_state["date_of_service"] = datetime.strptime(str(date_str).strip(), fmt).date()
+                            st.session_state["date_of_service"] = datetime.strptime(
+                                str(date_str).strip(), fmt
+                            ).date()
                             break
-                        except Exception:
+                        except:
                             continue
 
-                filled_fields = [
-                    safe_int(m.get("PatientAge")) > 0,
-                    bool(clean_text(m.get("PatientGender"))),
-                    safe_float(m.get("ClaimAmount")) > 0,
-                    bool(clean_text(m.get("DiagnosisCode"))),
-                    bool(clean_text(m.get("ProviderName"))),
-                    bool(clean_text(m.get("PatientEmploymentStatus"))),
-                    bool(clean_text(m.get("PolicyNumber"))),
+                important_fields = [
+                    bool(m.get("PatientAge")),
+                    bool(m.get("DiagnosisCode")),
+                    bool(m.get("ClaimAmount")),
+                    bool(m.get("PolicyNumber")),
+                    bool(m.get("ProviderName") or m.get("HospitalName")),
                 ]
 
-                if not any(filled_fields):
-                    st.session_state["_ocr_empty_warning"] = True
-                else:
-                    st.session_state["_ocr_empty_warning"] = False
+                st.session_state["_ocr_empty_warning"] = sum(important_fields) < 2
 
-                time.sleep(0.1)
                 st.rerun()
 
         if st.session_state.get("_ocr_empty_warning"):
             st.markdown(
                 """
                 <div class="ocr-warning-box">
-                    ⚠ Nofields were filled from OCR. Please check the image quality or enter the data manually.
+                    ⚠ No fields were filled from OCR. Please check the image quality or enter the data manually.
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -936,47 +991,43 @@ with right:
     c1, c2, c3 = st.columns([2, 1, 2])
     with c2:
         st.button("Clear your form", key="reset_form_btn", on_click=reset_claim_form)
+        
+if submitted:
+    errors = validate()
+    if errors:
+        st.session_state["error_fields"] = errors
+    else:
+        st.session_state["error_fields"] = []
 
-if submitted or st.session_state.get("_api_result"):
-    if submitted:
-        errors = validate()
-        if errors:
-            st.session_state["error_fields"] = errors
-            time.sleep(0.1)
-            st.rerun()
-        else:
-            st.session_state["error_fields"] = []
+        payload = {
+            "PatientAge": int(st.session_state.patient_age),
+            "PatientGender": st.session_state.patient_gender or "Other",
+            "PatientIncome": float(st.session_state.patient_income),
+            "PatientEmploymentStatus": str(st.session_state.patient_employment).strip() or "unknown",
+            "PatientMaritalStatus": str(st.session_state.patient_marital).strip() or "unknown",
+            "ProviderSpecialty": str(st.session_state.provider_specialty).strip() or "unknown",
+            "ClaimType": str(st.session_state.claim_type).strip() or "unknown",
+            "ClaimAmount": float(st.session_state.claim_amount),
+            "DiagnosisCode": str(st.session_state.diagnosis).strip() or "UNKNOWN",
+            "ProcedureCode": str(st.session_state.procedure).strip() or "UNKNOWN",
+            "PolicyNumber": str(st.session_state.policy_number).strip() or "",
+            "DateOfService": str(st.session_state.date_of_service),
+            "ProviderName": str(st.session_state.provider_name).strip(),
+            "PreAuthorizationStatus": str(st.session_state.pre_auth_status).strip(),
+            "ClaimSubmissionMethod": str(st.session_state.claim_submission_method).strip() or "unknown",
+            "ClaimStatus": str(st.session_state.claim_status).strip() or "pending",
+        }
 
-            payload = {
-                "PatientAge": int(st.session_state.patient_age),
-                "PatientGender": st.session_state.patient_gender or "Other",
-                "PatientIncome": float(st.session_state.patient_income),
-                "PatientEmploymentStatus": str(st.session_state.patient_employment).strip() or "unknown",
-                "PatientMaritalStatus": str(st.session_state.patient_marital).strip() or "unknown",
-                "ProviderSpecialty": str(st.session_state.provider_specialty).strip() or "unknown",
-                "ClaimType": str(st.session_state.claim_type).strip() or "unknown",
-                "ClaimAmount": float(st.session_state.claim_amount),
-                "DiagnosisCode": str(st.session_state.diagnosis).strip() or "UNKNOWN",
-                "ProcedureCode": str(st.session_state.procedure).strip() or "UNKNOWN",
-                "PolicyNumber": str(st.session_state.policy_number).strip() or "",
-                "DateOfService": str(st.session_state.date_of_service),
-                "ProviderName": str(st.session_state.provider_name).strip(),
-                "PreAuthorizationStatus": str(st.session_state.pre_auth_status).strip(),
-                "ClaimSubmissionMethod": str(st.session_state.claim_submission_method).strip() or "unknown",
-                "ClaimStatus": str(st.session_state.claim_status).strip() or "pending",
-            }
+        with st.spinner("Processing claim..."):
+            try:
+                r = requests.post(API_URL, json=payload, timeout=30)
+                if r.status_code == 200:
+                    st.session_state["_api_result"] = r.json()
+                    st.session_state["_submitted"] = True
+                else:
+                    st.error(f"Server error: HTTP {r.status_code}")
+            except Exception as ex:
+                st.error(f"Connection error: {ex}")
 
-            with st.spinner("Processing claim..."):
-                try:
-                    r = requests.post(API_URL, json=payload, timeout=30)
-                    if r.status_code == 200:
-                        st.session_state["_api_result"] = r.json()
-                        time.sleep(0.1)
-                        st.rerun()
-                    else:
-                        st.error(f"Server error: HTTP {r.status_code}")
-                except Exception as ex:
-                    st.error(f"Connection error: {ex}")
-
-if st.session_state.get("_api_result"):
+if st.session_state.get("_api_result") and st.session_state.get("_submitted"):
     render_result(st.session_state["_api_result"])

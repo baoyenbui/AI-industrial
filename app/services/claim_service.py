@@ -41,35 +41,33 @@ REQUIRED_FORM_FIELDS = [
     "PolicyNumber",
 ]
 
-
-def _resolve_pre_auth(parsed: dict) -> str:
-    for k in ["preauthorizationstatus", "preauthstatus", "preauthorization", "preauth", "pre_auth", "PreAuthorizationStatus", "PreAuthStatus"]:
-        v = parsed.get(k)
-        if v is not None:
-            s = str(v).strip().lower()
-            if s in ("yes", "true", "1", "approved", "granted"):
-                return "Yes"
-            if s in ("no", "false", "0", "denied", "not required"):
-                return "No"
+def _resolve_pre_auth(parsed: dict, raw: dict = None) -> str:
+    raw = raw or {}
+    sources = [parsed, raw]
+    for data in sources:
+        for k in ["PreAuthorizationStatus", "pre_auth", "preauthorizationstatus", 
+                  "PreAuthStatus", "pre_auth_status", "pre_auth"]:
+            v = data.get(k)
+            if v is not None:
+                s = str(v).strip().lower()
+                if any(x in s for x in ["yes", "true", "1", "approved", "granted", "có"]):
+                    return "Yes"
+                if any(x in s for x in ["no", "false", "0", "denied", "not", "pending"]):
+                    return "No"
     return "No"
 
-
 def _get_amount(parsed: dict, raw: dict) -> float:
-    keys = ["ClaimAmount", "claim_amount", "claimamount", "amount", "claimAmount"]
-    for k in keys:
-        v = raw.get(k)
-        if v is not None:
-            result = safe_float(v)
-            if result is not None and result > 0:
-                return result
-    for k in keys:
-        v = parsed.get(k)
-        if v is not None:
-            result = safe_float(v)
-            if result is not None and result > 0:
-                return result
+    raw = raw or {}
+    keys = ["ClaimAmount", "claim_amount", "claimAmount", "amount", "total", 
+            "Total Claim Amount", "billed_amount", "total_billed"]
+    for data in [raw, parsed]:
+        for k in keys:
+            v = data.get(k)
+            if v is not None:
+                val = safe_float(v)
+                if val > 0:
+                    return val
     return 60.0
-
 
 def _get_pre_auth_raw(raw: dict) -> str:
     for k in ["PreAuthorizationStatus", "pre_authorization_status", "preauthorizationstatus", "pre_auth_status", "PreAuthStatus", "pre_auth"]:
@@ -82,14 +80,9 @@ def _get_pre_auth_raw(raw: dict) -> str:
                 return "No"
     return "No"
 
-
 def _build_data(parsed: dict, claim_amount: float, raw: dict = None) -> dict:
     raw = raw or {}
-    pre_auth = _resolve_pre_auth(parsed)
-    if not pre_auth or pre_auth == "No":
-        raw_pre = _get_pre_auth_raw(raw)
-        if raw_pre:
-            pre_auth = raw_pre
+    pre_auth = _resolve_pre_auth(parsed, raw)
     return {
         "claim_amount": claim_amount,
         "age": safe_int(raw.get("PatientAge") or parsed.get("patient_age") or parsed.get("PatientAge") or 30) or 30,
@@ -108,7 +101,6 @@ def _build_data(parsed: dict, claim_amount: float, raw: dict = None) -> dict:
         "submission_method": str(raw.get("ClaimSubmissionMethod") or parsed.get("claim_submission_method") or parsed.get("ClaimSubmissionMethod") or "online"),
         "insurance_company": str(raw.get("insurance_company") or raw.get("InsuranceCompany") or "Default Insurance"),
     }
-
 
 def get_company_rules(company_name: str) -> dict:
     if not company_name:
@@ -131,9 +123,8 @@ def get_company_rules(company_name: str) -> dict:
     except Exception:
         return {"company_id": "DEFAULT", "company_name": "Default Insurance", "default_reimbursement_percent": 0.80, "coverage_rules": {}}
 
-
 def calculate_dynamic_reimbursement(claim_amount: float, data: dict) -> tuple:
-    claim_amount = max(0.01, float(claim_amount or 0.0))
+    claim_amount = max(10.0, float(claim_amount or 0.0))
     company_name = data.get("insurance_company", "Default Insurance")
     company_rules = get_company_rules(company_name)
     default_percent = company_rules["default_reimbursement_percent"]
@@ -146,6 +137,7 @@ def calculate_dynamic_reimbursement(claim_amount: float, data: dict) -> tuple:
     rule_applied = "standard_policy"
     rule_label = "standard policy"
     max_amount = None
+
     for rule_id, rule in rules.items():
         condition = str(rule.get("condition", "")).strip().lower()
         try:
@@ -160,7 +152,7 @@ def calculate_dynamic_reimbursement(claim_amount: float, data: dict) -> tuple:
                 min_age = int(condition.split("age >=")[1].split()[0])
                 condition_check = condition_check and (age >= min_age)
             if any(code in diagnosis for code in HIGH_RISK_CODES) and "high_risk" in condition:
-                condition_check = condition_check and True
+                condition_check = True
             if condition_check:
                 applied_percent = rule.get("reimbursement_percent", default_percent)
                 rule_applied = rule_id
@@ -169,19 +161,18 @@ def calculate_dynamic_reimbursement(claim_amount: float, data: dict) -> tuple:
                 break
         except Exception:
             continue
+
     deductible = 30.0 if age >= 65 else (80.0 if any(code in diagnosis for code in HIGH_RISK_CODES) else 50.0)
     eligible = claim_amount
     after_deduct = max(0.0, eligible - deductible)
     baseline = round(after_deduct * applied_percent, 2)
     reimbursement = baseline
+
     if max_amount and reimbursement > max_amount:
         reimbursement = max_amount
     if reimbursement <= 0:
-        reimbursement = round((claim_amount - 50.0) * 0.80, 2)
-        if reimbursement < 0:
-            reimbursement = claim_amount * 0.70
-    if reimbursement <= 0:
-        reimbursement = max(round(claim_amount * 0.70, 2), 10.0)
+        reimbursement = max(round(claim_amount * 0.75, 2), 10.0)
+
     breakdown = {
         "claim_amount": claim_amount,
         "eligible": eligible,
@@ -199,7 +190,6 @@ def calculate_dynamic_reimbursement(claim_amount: float, data: dict) -> tuple:
         "company_name": company_name,
     }
     return reimbursement, breakdown, rule_applied
-
 
 def _shap_groups(shap_factors: list = None) -> dict:
     groups = {
@@ -232,14 +222,12 @@ def _shap_groups(shap_factors: list = None) -> dict:
         groups[k] = [v for i, v in enumerate(groups[k]) if v and v not in groups[k][:i]]
     return groups
 
-
 def _tone_word(decision: str) -> tuple[str, str]:
     if decision == "Approved":
         return "Approved", "Your claim is covered."
     if decision == "Denied":
         return "Not approved", "This claim could not be covered based on the information provided."
     return "Under review", "We still need a bit more information before a final answer."
-
 
 def _clean_sentences(items):
     out = []
@@ -250,7 +238,6 @@ def _clean_sentences(items):
                 text += "."
             out.append(text)
     return out
-
 
 def _friendly_reason(text: str) -> str:
     t = str(text or "").strip()
@@ -282,7 +269,6 @@ def _friendly_reason(text: str) -> str:
         return ""
     return t
 
-
 def _confidence_copy(confidence: float) -> str:
     c = max(0.0, min(100.0, float(confidence or 0.0)))
     if c <= 30:
@@ -293,10 +279,8 @@ def _confidence_copy(confidence: float) -> str:
         return f"Confidence is {c:.2f}%, because most of the key details are available and consistent."
     return f"Confidence is {c:.2f}%, because the claim has clear, complete details that support the result."
 
-
 def _format_money(amount: float) -> str:
     return f"${amount:,.2f}"
-
 
 def _collect_explanation_sections(data: dict, breakdown: dict, decision: str, final_amount: float, confidence: float = 0.0, shap_factors: list = None, knowledge_reference: str = None) -> dict:
     claim = float(breakdown.get("claim_amount", 60))
@@ -389,10 +373,8 @@ def _collect_explanation_sections(data: dict, breakdown: dict, decision: str, fi
         "rule_label": rule_label,
     }
 
-
 def _format_li(items):
     return "".join(f"<li>{escape(str(x))}</li>" for x in items if x)
-
 
 def _build_human_explanation(data: dict, breakdown: dict, decision: str, final_amount: float, confidence: float = 0.0, shap_factors: list = None, knowledge_reference: str = None) -> str:
     e = _collect_explanation_sections(
@@ -409,14 +391,10 @@ def _build_human_explanation(data: dict, breakdown: dict, decision: str, final_a
     <div class="exp-chip exp-chip-{escape(decision.lower())}">{escape(e["headline"])}</div>
     <div class="exp-headline">{escape(e["subheadline"])}</div>
   </div>
-
-
   <div class="exp-section exp-section-overview">
     <div class="exp-section-title">What this means</div>
     <ul class="exp-list">{_format_li(e["summary_items"])}</ul>
   </div>
-
-
   <div class="exp-section">
     <div class="exp-section-title">How we worked this out</div>
     <div class="exp-calc-table">
@@ -442,19 +420,15 @@ def _build_human_explanation(data: dict, breakdown: dict, decision: str, final_a
       </div>
     </div>
   </div>
-
-
   <div class="exp-section">
     <div class="exp-section-title">Why this result</div>
     <ul class="exp-list">{_format_li(e["why_items"])}</ul>
   </div>
- 
   <div class="exp-section">
     <div class="exp-section-title">How to improve results</div>
     <ul class="exp-list">{_format_li(e["improve_items"])}</ul>
   </div>
 </div>'''
-
 
 def _fast_decision(data: dict, baseline: float) -> dict:
     pre_auth = data.get("pre_auth", "No")
@@ -488,7 +462,6 @@ def _fast_decision(data: dict, baseline: float) -> dict:
         "policy_type": "standard",
         "confidence": 75,
     }
-
 
 def llm_validate_fraud(data: dict, baseline: float, fraud_result: dict) -> dict:
     fraud_level = fraud_result.get("label", "LOW")
@@ -543,7 +516,6 @@ def llm_validate_fraud(data: dict, baseline: float, fraud_result: dict) -> dict:
             "confidence": 80,
         }
 
-
 def get_decision(query=None, rag_context: str = "", itemized_items: list = None, fraud_result: dict = None, shap_factors: list = None) -> dict:
     raw = query if isinstance(query, dict) else {}
     parsed = parse_query(query)
@@ -563,20 +535,15 @@ def get_decision(query=None, rag_context: str = "", itemized_items: list = None,
         final_amount = 0.0
         decision = "Denied"
     elif reimbursement > 0:
-        min_allowed = reimbursement * 0.50
-        max_allowed = reimbursement * 2.00
-        final_amount = max(min_allowed, min(max_allowed, final_amount))
+        final_amount = max(reimbursement * 0.5, min(reimbursement * 2.0, final_amount))
     llm_result["decision"] = decision
     llm_result["reimbursement_amount"] = round(final_amount, 2)
     company_name = breakdown.get("company_name", "Default Insurance")
     recommendation = rag_context.strip() if rag_context else None
     knowledge_reference = f"Additional context from the claim knowledge base suggests: {recommendation}" if recommendation else None
     explanation = _build_human_explanation(
-        data,
-        breakdown,
-        decision,
-        final_amount,
-        confidence=llm_result.get("confidence", 82),
+        data, breakdown, decision, final_amount,
+        confidence=llm_result.get("confidence", 75),
         shap_factors=shap_factors or [],
         knowledge_reference=knowledge_reference,
     )
@@ -590,7 +557,7 @@ def get_decision(query=None, rag_context: str = "", itemized_items: list = None,
         "explanation": explanation,
         "flagged_items": llm_result.get("flagged_items", []),
         "policy_type": llm_result.get("policy_type", "standard"),
-        "confidence": llm_result.get("confidence", 82),
+        "confidence": min(100, int(llm_result.get("confidence", 75))),
         "policy_number": data["policy_number"],
         "date_of_service": data["date_of_service"],
         "hospital_name": data["hospital_name"],
@@ -599,7 +566,6 @@ def get_decision(query=None, rag_context: str = "", itemized_items: list = None,
         "rule_applied": rule_applied,
         "reimbursement_percent": breakdown.get("reimbursement_percent", 0.80),
     }
-
 
 def _save_claim(db_claims, data: dict, decision_result: dict, raw_ocr_text: str = "") -> bool:
     if not db_claims:
@@ -636,18 +602,35 @@ def _save_claim(db_claims, data: dict, decision_result: dict, raw_ocr_text: str 
         db_claims.rollback()
         return False
 
-
 def process_claim(file_bytes: bytes = None, form_data: dict = None, db_knowledge=None, db_claims=None) -> dict:
-    text = file_bytes.decode("utf-8", errors="ignore") if file_bytes else ""
     user_id = form_data.get("user_id") if form_data else "default_user"
     diagnosis_code = form_data.get("diagnosis_code") if form_data else None
-    
-    existing_bills = user_bills_db.get(user_id, [])
-    
+
+    raw_text = ""
+    if file_bytes:
+        from .ocr_service import ocr_image, clean_text
+        try:
+            is_png = file_bytes[:8] == b'\x89PNG\r\n\x1a\n'
+            is_jpg = file_bytes[:2] == b'\xff\xd8'
+
+            if is_png or is_jpg:
+                ocr_text = ocr_image(file_bytes)
+                raw_text = clean_text(ocr_text) if ocr_text else ""
+            else:
+                raw_text = file_bytes.decode("utf-8", errors="ignore")[:8000]
+        except Exception:
+            raw_text = ""
+
+    text = raw_text
+
+    form_claim_amount = safe_float(form_data.get("claim_amount") or form_data.get("ClaimAmount") or 0)
+    if form_claim_amount <= 0:
+        form_claim_amount = 60.0
+
     bill_from_form = {
         "user_id": user_id,
         "patient_name": form_data.get("PatientName") if form_data else None,
-        "total_billed": _get_amount({}, form_data or {}),
+        "total_billed": form_claim_amount,
         "currency": "USD",
         "ocr_quality": "medium",
         "vendor_name": form_data.get("ProviderName") if form_data else None,
@@ -656,104 +639,76 @@ def process_claim(file_bytes: bytes = None, form_data: dict = None, db_knowledge
         "bill_id": form_data.get("PolicyNumber") if form_data else None,
         "diagnosis_text": _map_icd_to_disease_text(diagnosis_code) if diagnosis_code else None,
         "ocr_text": text[:8000],
-        "items": [], 
+        "items": [],
     }
-    
+
     from .ocr_itemized import parse_items_with_regex, dedupe_items
     regex_items = parse_items_with_regex(text)
+
     if regex_items:
         bill_from_form["items"] = dedupe_items(regex_items)
         bill_from_form["total_billed"] = round(sum(i.get("total") or 0 for i in regex_items), 2)
-    
+
     ocr_result = process_ocr_claim(
         text=text,
         diagnosis_code=diagnosis_code,
-        existing_bills=existing_bills,
+        existing_bills=user_bills_db.get(user_id, []),
         user_id=user_id
     )
-    
-    if ocr_result["status"] == "duplicate":
-        return {
-            "status": "duplicate",
-            "decision": "Pending",
-            "duplicate": True,
-            "reason": ocr_result.get("reason"),
-            "total_amount_in_db": sum(b.get('total_billed', 0) for b in existing_bills),
-            "existing_bills_count": len(existing_bills),
-        }
 
-    if ocr_result["status"] == "empty" or (ocr_result["status"] == "ok" and not ocr_result["bill"].get("items")):
-        if bill_from_form["items"]:
-            for old_bill in existing_bills:
-                if not old_bill.get("items"):
-                    continue
-                from .ocr_itemized import items_similarity
-                sim = items_similarity(bill_from_form, old_bill)
-                if sim >= 0.70:
-                    return {
-                        "status": "duplicate",
-                        "decision": "Pending",
-                        "duplicate": True,
-                        "reason": f"regex_items_similarity_{sim:.2f}",
-                        "similarity_score": sim,
-                        "total_amount_in_db": sum(b.get('total_billed', 0) for b in existing_bills),
-                        "existing_bills_count": len(existing_bills),
-                    }
-    
-    if ocr_result["status"] == "empty":
-        return {
-            "status": "empty",
-            "decision": "Pending",
-            "duplicate": False,
-            "items_count": len(bill_from_form.get("items", [])),
-            "total_amount_in_db": sum(b.get('total_billed', 0) for b in existing_bills),
-        }
-    
-    bill = ocr_result["bill"]
-    
-    raw_text = ""
-    if file_bytes:
-        from .ocr_service import ocr_image, clean_text
-        try:
-            if file_bytes[:8] == b'\x89PNG\r\n\x1a\n':
-                ocr_text = ocr_image(file_bytes)
-                raw_text = clean_text(ocr_text) if ocr_text else ""
-            elif file_bytes[:2] == b'\xff\xd8':
-                ocr_text = ocr_image(file_bytes)
-                raw_text = clean_text(ocr_text) if ocr_text else ""
-            else:
-                raw_text = file_bytes.decode("utf-8", errors="ignore")[:8000]
-        except Exception:
-            raw_text = file_bytes.decode("utf-8", errors="ignore")[:8000]
-    
-    extracted_data = extract_claim_data(raw_text) if raw_text else {}
+    extracted_data = extract_claim_data(text) if text else {}
     merged_data = form_data if form_data else {}
+
     if extracted_data:
         for k, v in extracted_data.items():
             if k not in merged_data and v and str(v).strip():
                 merged_data[k] = v
+
     parsed = parse_query(merged_data)
     claim_amount = _get_amount(parsed, merged_data)
+    if claim_amount <= 0:
+        claim_amount = form_claim_amount
+
     data = _build_data(parsed, claim_amount, merged_data)
-    diagnosis_code = data.get("diagnosis_code") or merged_data.get("DiagnosisCode") or merged_data.get("diagnosis_code") or "Z00.00"
+
+    diagnosis_code = (
+        data.get("diagnosis_code")
+        or merged_data.get("DiagnosisCode")
+        or merged_data.get("diagnosis_code")
+        or "Z00.00"
+    )
+
     items = []
     saved_count = 0
-    if raw_text:
-        items = extract_itemized_bill(raw_text, diagnosis_code)
+
+    if text:
+        items = extract_itemized_bill(text, diagnosis_code)
+
         if db_knowledge and items:
             for item in items:
                 _, action = upsert_knowledge_item(db_knowledge, item, diagnosis_code, "ocr_extracted")
                 if action in ("created", "updated"):
                     saved_count += 1
+
     similar = vector_search(db_knowledge, str(items or merged_data), diagnosis_code) if db_knowledge and items else []
     rag_context = build_rag_context(items, similar)
+
     fraud_result = predict_fraud(data)
     shap_contributions = explain_decision(data, fraud_result)
-    decision_result = get_decision(query=merged_data, rag_context=rag_context, itemized_items=items, fraud_result=fraud_result, shap_factors=shap_contributions)
-    _save_claim(db_claims, data, decision_result, raw_text)
+
+    decision_result = get_decision(
+        query=merged_data,
+        rag_context=rag_context,
+        itemized_items=items,
+        fraud_result=fraud_result,
+        shap_factors=shap_contributions
+    )
+
+    _save_claim(db_claims, data, decision_result, text)
+
     return {
         "status": "ok",
-        "raw_text_preview": raw_text[:2000] if raw_text else None,
+        "raw_text_preview": text[:2000] if text else None,
         "extracted_data": extracted_data,
         "merged_data": merged_data,
         "itemized_items": items,
@@ -765,7 +720,5 @@ def process_claim(file_bytes: bytes = None, form_data: dict = None, db_knowledge
         "fraud_label": fraud_result.get("label", ""),
         "fraud_flags": fraud_result.get("flags", []),
         "shap_factors": shap_contributions,
-        "duplicate_check": ocr_result,
-        "existing_bills_checked": len(existing_bills),
         **decision_result,
     }
