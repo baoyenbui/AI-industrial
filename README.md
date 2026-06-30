@@ -20,7 +20,7 @@ It also supports reimbursement estimation and fraud risk detection.
 ---
 ## 2. Core Features
 
-- **AI Decision Engine**: Automatic classification (Approved/Denied/Pending), reimbursement calculation, confidence scoring, and clear explanations.
+- **AI Decision Engine**: Automatic classification (Approved/Denied), reimbursement calculation, confidence scoring, and clear explanations.
 - **RAG Retrieval System**: FAISS-powered semantic search to retrieve relevant historical claims, policies, and medical rules for grounded reasoning.
 - **OCR Pipeline**: Extracts structured data from medical invoices with robust validation and error correction.
 - **Knowledge Base**: Centralized storage of insurance policies, pricing rules, treatment guidelines, and fraud patterns.
